@@ -138,7 +138,9 @@ export default function MusterilerPage() {
         district: formData.district,
         orderCount: 0,
         totalAmount: 0,
-        lastOrder: new Date().toISOString().split('T')[0]
+        lastOrder: new Date().toISOString().split('T')[0],
+        lastProduct: 'Henüz ürün yok',
+        purchaseDate: new Date().toISOString().split('T')[0]
       }
       setCustomers([...customers, newCustomer])
       alert('Müşteri başarıyla eklendi!')
