@@ -1,0 +1,120 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  customers Customer[]
+  shipments Shipment[]
+  products  Product[]
+
+  @@map("users")
+}
+
+model Customer {
+  id          String   @id @default(cuid())
+  name        String
+  phone       String?
+  address     String?
+  city        String?
+  district    String?
+  orderCount  Int      @default(0)
+  totalAmount Int      @default(0)
+  lastOrder   DateTime?
+  lastProduct String?
+  purchaseDate DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userId    String
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shipments Shipment[]
+
+  @@map("customers")
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  category    String
+  price       Int
+  stock       Int      @default(0)
+  status      String   @default("Stokta")
+  image       String?
+  features    String[] @default([])
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shipmentItems ShipmentItem[]
+
+  @@map("products")
+}
+
+model Shipment {
+  id           String   @id @default(cuid())
+  shipmentCode String   @unique
+  customerName String
+  customerPhone String?
+  address      String?
+  shipmentDate DateTime
+  deliveryDate DateTime?
+  status       String   @default("Hazırlanıyor")
+  amount       Int      @default(0)
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Vehicle Info
+  vehiclePlate String?
+  vehicleType  String?
+  driverName   String?
+  driverPhone  String?
+
+  // Fuel Info
+  fuelCost     Int?
+  distance     Int?
+  consumption  String?
+
+  // Relations
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customerId String?
+  customer  Customer?      @relation(fields: [customerId], references: [id])
+  items     ShipmentItem[]
+
+  @@map("shipments")
+}
+
+model ShipmentItem {
+  id         String @id @default(cuid())
+  quantity   Int    @default(1)
+  price      Int
+  
+  // Relations
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+
+  @@map("shipment_items")
+}
