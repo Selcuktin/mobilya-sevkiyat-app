@@ -1,21 +1,9 @@
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
+import { PrismaClient } from '@prisma/client'
+import bcrypt from 'bcryptjs'
 
-// Mock user database - gerçek uygulamada Prisma/database kullanılacak
-const users = [
-  {
-    id: '1',
-    email: 'demo@example.com',
-    password: 'secret123', // Basit şifre test için
-    name: 'Demo User'
-  },
-  {
-    id: '2',
-    email: 'admin@gmail.com',
-    password: 'admin123',
-    name: 'Admin User'
-  }
-]
+const prisma = new PrismaClient()
 
 const handler = NextAuth({
   providers: [
@@ -33,24 +21,36 @@ const handler = NextAuth({
           return null
         }
 
-        const user = users.find(user => user.email === credentials.email)
+        try {
+          // Database'den kullanıcıyı bul
+          const user = await prisma.user.findUnique({
+            where: {
+              email: credentials.email
+            }
+          })
 
-        if (!user) {
-          console.log('User not found')
+          if (!user) {
+            console.log('User not found')
+            return null
+          }
+
+          // Şifre kontrolü
+          const isPasswordValid = await bcrypt.compare(credentials.password, user.password)
+
+          if (!isPasswordValid) {
+            console.log('Invalid password')
+            return null
+          }
+
+          console.log('Login successful:', user)
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          }
+        } catch (error) {
+          console.error('Auth error:', error)
           return null
-        }
-
-        // Basit şifre kontrolü (test için)
-        if (user.password !== credentials.password) {
-          console.log('Invalid password')
-          return null
-        }
-
-        console.log('Login successful:', user)
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
         }
       }
     })

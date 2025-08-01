@@ -1,17 +1,10 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
-// Mock user database - gerçek uygulamada Prisma/database kullanılacak
-let users: any[] = [
-  {
-    id: '1',
-    email: 'demo@example.com',
-    password: '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VcSAg/9qm', // secret123
-    name: 'Demo User'
-  }
-]
+const prisma = new PrismaClient()
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const { name, email, password } = await request.json()
 
@@ -31,7 +24,10 @@ export async function POST(request: Request) {
     }
 
     // Check if user already exists
-    const existingUser = users.find(user => user.email === email)
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    })
+
     if (existingUser) {
       return NextResponse.json(
         { message: 'Bu email adresi zaten kullanılıyor' },
@@ -42,21 +38,25 @@ export async function POST(request: Request) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    // Create new user
-    const newUser = {
-      id: (users.length + 1).toString(),
-      email,
-      password: hashedPassword,
-      name,
-      createdAt: new Date().toISOString()
-    }
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+      }
+    })
 
-    users.push(newUser)
+    // Return success (don't send password back)
+    return NextResponse.json({
+      message: 'Kullanıcı başarıyla oluşturuldu',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      }
+    })
 
-    return NextResponse.json(
-      { message: 'Hesap başarıyla oluşturuldu' },
-      { status: 201 }
-    )
   } catch (error) {
     console.error('Registration error:', error)
     return NextResponse.json(
