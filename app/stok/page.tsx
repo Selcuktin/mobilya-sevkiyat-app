@@ -7,67 +7,17 @@ import Link from 'next/link'
 import { Search, Filter, Eye, Edit, Trash2, AlertTriangle, TrendingUp, Package, BarChart3 } from 'lucide-react'
 import Navigation from '../../components/Layout/Navigation'
 import Header from '../../components/Layout/Header'
+import { Loading, ButtonLoading } from '../../components/ui/Loading'
+import { useToast } from '../../contexts/ToastContext'
 
-// Mock data - gerçek uygulamada database'den gelecek
-const initialStockData = [
-  {
-    id: 1,
-    productName: 'Ada Yatak Odası Takımı',
-    code: 'YOT-001',
-    category: 'Yatak Odası',
-    currentStock: 15,
-    minStock: 5,
-    maxStock: 30,
-    unitPrice: 15000,
-    totalValue: 225000,
-    status: 'Stokta',
-    lastUpdated: '2024-01-15'
-  },
-  {
-    id: 2,
-    productName: 'Sandal Oturma Odası Takımı',
-    code: 'OTS-002',
-    category: 'Oturma Odası',
-    currentStock: 3,
-    minStock: 5,
-    maxStock: 20,
-    unitPrice: 12000,
-    totalValue: 36000,
-    status: 'Az Stok',
-    lastUpdated: '2024-01-14'
-  },
-  {
-    id: 3,
-    productName: 'Klasik Yemek Odası Takımı',
-    code: 'YEM-003',
-    category: 'Yemek Odası',
-    currentStock: 0,
-    minStock: 3,
-    maxStock: 15,
-    unitPrice: 18000,
-    totalValue: 0,
-    status: 'Tükendi',
-    lastUpdated: '2024-01-13'
-  },
-  {
-    id: 4,
-    productName: 'Modern TV Ünitesi',
-    code: 'TVU-004',
-    category: 'Oturma Odası',
-    currentStock: 25,
-    minStock: 8,
-    maxStock: 20,
-    unitPrice: 3500,
-    totalValue: 87500,
-    status: 'Fazla Stok',
-    lastUpdated: '2024-01-16'
-  }
-]
+// Gerçek API'den veri çekilecek
 
 export default function StokPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [stockData, setStockData] = useState(initialStockData)
+  const { showSuccess, showError } = useToast()
+  const [stockData, setStockData] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('Tüm Kategoriler')
   const [selectedStatus, setSelectedStatus] = useState('Tüm Durumlar')
@@ -75,7 +25,26 @@ export default function StokPage() {
   useEffect(() => {
     if (status === 'loading') return
     if (!session) router.push('/auth/signin')
+    else fetchStockData()
   }, [session, status, router])
+
+  const fetchStockData = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/stock')
+      const data = await response.json()
+      
+      if (data.success) {
+        setStockData(data.data)
+      } else {
+        showError('Veri yüklenemedi', data.error)
+      }
+    } catch (error) {
+      showError('Bağlantı hatası', 'Stok verileri yüklenirken hata oluştu')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   if (status === 'loading') {
     return (
@@ -127,7 +96,29 @@ export default function StokPage() {
     }
   }
 
-  const totalValue = filteredData.reduce((sum, item) => sum + item.totalValue, 0)
+  const totalValue = filteredData.reduce((sum, item) => sum + (item.totalValue || 0), 0)
+  const lowStockCount = filteredData.filter(item => item.status === 'Az Stok').length
+  const outOfStockCount = filteredData.filter(item => item.status === 'Tükendi').length
+
+  const updateStock = async (id: string, newQuantity: number) => {
+    try {
+      const response = await fetch('/api/stock', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, currentStock: newQuantity })
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        showSuccess('Stok güncellendi', 'Stok miktarı başarıyla güncellendi')
+        fetchStockData() // Refresh data
+      } else {
+        showError('Güncelleme hatası', data.error)
+      }
+    } catch (error) {
+      showError('Bağlantı hatası', 'Stok güncellenirken hata oluştu')
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -161,57 +152,73 @@ export default function StokPage() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Package className="h-6 w-6 text-blue-600" />
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-white rounded-lg shadow p-6 animate-pulse">
+                <div className="flex items-center">
+                  <div className="p-2 bg-gray-200 rounded-lg w-10 h-10"></div>
+                  <div className="ml-4 flex-1">
+                    <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                    <div className="h-6 bg-gray-200 rounded w-16"></div>
+                  </div>
+                </div>
               </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Toplam Ürün</p>
-                <p className="text-2xl font-bold text-gray-900">4</p>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Package className="h-6 w-6 text-blue-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Toplam Ürün</p>
+                  <p className="text-2xl font-bold text-gray-900">{stockData.length}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-yellow-100 rounded-lg">
+                  <AlertTriangle className="h-6 w-6 text-yellow-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Az Stok</p>
+                  <p className="text-2xl font-bold text-gray-900">{lowStockCount}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <AlertTriangle className="h-6 w-6 text-red-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Tükenen</p>
+                  <p className="text-2xl font-bold text-gray-900">{outOfStockCount}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <TrendingUp className="h-6 w-6 text-green-600" />
+                </div>
+                <div className="ml-4">
+                  <p className="text-sm font-medium text-gray-600">Toplam Değer</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {totalValue.toLocaleString('tr-TR')} ₺
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <AlertTriangle className="h-6 w-6 text-yellow-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Az Stok</p>
-                <p className="text-2xl font-bold text-gray-900">1</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Tükenen</p>
-                <p className="text-2xl font-bold text-gray-900">1</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex items-center">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <TrendingUp className="h-6 w-6 text-green-600" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Toplam Değer</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {totalValue.toLocaleString('tr-TR')} ₺
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Search and Filters */}
         <div className="bg-white rounded-lg shadow p-6 mb-8">
@@ -340,22 +347,7 @@ export default function StokPage() {
                           onClick={() => {
                             const newStock = prompt(`${item.productName} için yeni stok miktarı:`, item.currentStock.toString())
                             if (newStock && !isNaN(Number(newStock))) {
-                              const newStockNum = Number(newStock)
-                              const newTotalValue = newStockNum * item.unitPrice
-                              const newStatus = updateStockStatus(newStockNum, item.minStock, item.maxStock)
-                              
-                              setStockData(stockData.map(stock => 
-                                stock.id === item.id 
-                                  ? {
-                                      ...stock,
-                                      currentStock: newStockNum,
-                                      totalValue: newTotalValue,
-                                      status: newStatus,
-                                      lastUpdated: new Date().toISOString().split('T')[0]
-                                    }
-                                  : stock
-                              ))
-                              alert('Stok başarıyla güncellendi!')
+                              updateStock(item.id, Number(newStock))
                             }
                           }}
                         >
@@ -364,10 +356,22 @@ export default function StokPage() {
                         <button 
                           className="text-red-600 hover:text-red-900"
                           title="Ürünü Sil"
-                          onClick={() => {
+                          onClick={async () => {
                             if (confirm(`${item.productName} ürünü silinecek. Emin misiniz?`)) {
-                              setStockData(stockData.filter(stock => stock.id !== item.id))
-                              alert('Ürün başarıyla silindi!')
+                              try {
+                                const response = await fetch(`/api/products/${item.productId}`, {
+                                  method: 'DELETE'
+                                })
+                                const data = await response.json()
+                                if (data.success) {
+                                  showSuccess('Ürün silindi', 'Ürün başarıyla silindi')
+                                  fetchStockData()
+                                } else {
+                                  showError('Silme hatası', data.error)
+                                }
+                              } catch (error) {
+                                showError('Bağlantı hatası', 'Ürün silinirken hata oluştu')
+                              }
                             }
                           }}
                         >

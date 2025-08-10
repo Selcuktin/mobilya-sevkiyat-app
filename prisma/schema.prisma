@@ -18,32 +18,29 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
+  // Relations - Her kullanıcının kendi verileri
   customers Customer[]
-  shipments Shipment[]
   products  Product[]
+  shipments Shipment[]
 
   @@map("users")
 }
 
 model Customer {
-  id          String   @id @default(cuid())
-  name        String
-  phone       String?
-  address     String?
-  city        String?
-  district    String?
-  orderCount  Int      @default(0)
-  totalAmount Int      @default(0)
-  lastOrder   DateTime?
-  lastProduct String?
-  purchaseDate DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String
+  address   String?
+  city      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  // Relations
+  // User relation
   userId    String
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relations
   shipments Shipment[]
 
   @@map("customers")
@@ -53,18 +50,19 @@ model Product {
   id          String   @id @default(cuid())
   name        String
   category    String
-  price       Int
-  stock       Int      @default(0)
-  status      String   @default("Stokta")
+  price       Float
   image       String?
   features    String[] @default([])
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Relations
+  // User relation
   userId        String
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relations
+  stock         Stock?
   shipmentItems ShipmentItem[]
 
   @@map("products")
@@ -72,43 +70,45 @@ model Product {
 
 model Shipment {
   id           String   @id @default(cuid())
-  shipmentCode String   @unique
-  customerName String
-  customerPhone String?
-  address      String?
-  shipmentDate DateTime
+  customerId   String
+  address      String
+  city         String
+  status       String   @default("PENDING")
+  totalAmount  Float
   deliveryDate DateTime?
-  status       String   @default("Hazırlanıyor")
-  amount       Int      @default(0)
-  notes        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  // Vehicle Info
-  vehiclePlate String?
-  vehicleType  String?
-  driverName   String?
-  driverPhone  String?
-
-  // Fuel Info
-  fuelCost     Int?
-  distance     Int?
-  consumption  String?
+  // User relation
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Relations
-  userId    String
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  customerId String?
-  customer  Customer?      @relation(fields: [customerId], references: [id])
-  items     ShipmentItem[]
+  customer Customer      @relation(fields: [customerId], references: [id])
+  items    ShipmentItem[]
 
   @@map("shipments")
+}
+
+model Stock {
+  id          String @id @default(cuid())
+  productId   String @unique
+  quantity    Int    @default(0)
+  minQuantity Int    @default(5)
+  maxQuantity Int    @default(100)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("stock")
 }
 
 model ShipmentItem {
   id         String @id @default(cuid())
   quantity   Int    @default(1)
-  price      Int
+  unitPrice  Float
   
   // Relations
   shipmentId String

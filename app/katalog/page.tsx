@@ -3,92 +3,67 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { Search, Filter, Plus, Edit, Trash2, Package } from 'lucide-react'
 import Navigation from '../../components/Layout/Navigation'
 import Header from '../../components/Layout/Header'
+import { Loading } from '../../components/ui/Loading'
+import { useToast } from '../../contexts/ToastContext'
 
-// Mock data - gerçek uygulamada database'den gelecek
-const initialProducts = [
-  {
-    id: 1,
-    name: 'Ada Yatak Odası Takımı',
-    category: 'Yatak Odası',
-    price: 15000,
-    stock: 15,
-    status: 'Stokta',
-    image: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop',
-    features: ['Masif ahşap', 'Yatak 160*200', 'Fırçalı görünüm']
-  },
-  {
-    id: 2,
-    name: 'Sandal Oturma Odası Takımı',
-    category: 'Oturma Odası',
-    price: 12000,
-    stock: 3,
-    status: 'Stokta',
-    image: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=400&h=300&fit=crop',
-    features: ['Gerçek deri', '3+2+1 koltuk', 'Yıkanabilir kumaş']
-  },
-  {
-    id: 3,
-    name: 'Klasik Yemek Odası Takımı',
-    category: 'Yemek Odası',
-    price: 18000,
-    stock: 0,
-    status: 'Tükendi',
-    image: 'https://images.unsplash.com/photo-1449247709967-d4461a6a6103?w=400&h=300&fit=crop',
-    features: ['Masif meşe', '6 kişilik masa', 'El işçiliği']
-  },
-  {
-    id: 4,
-    name: 'Modern TV Ünitesi',
-    category: 'Oturma Odası',
-    price: 3500,
-    stock: 25,
-    status: 'Fazla Stok',
-    image: 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop',
-    features: ['Ceviz kaplama', 'LED ışık', 'Kapaklı bölme']
-  }
-]
+interface Product {
+  id: string
+  name: string
+  category: string
+  price: number
+  stock: number
+  status: string
+  features: string[]
+  description?: string
+}
 
 export default function KatalogPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [products, setProducts] = useState(initialProducts)
+  const { showSuccess, showError } = useToast()
+  const [products, setProducts] = useState<Product[]>([])
+  const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('Tüm Kategoriler')
   const [selectedStock, setSelectedStock] = useState('Tüm Stoklar')
   const [showModal, setShowModal] = useState(false)
-  const [editingProduct, setEditingProduct] = useState<any>(null)
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     category: 'Yatak Odası',
     price: '',
-    stock: '',
     description: '',
     features: '',
-    image: ''
+    initialStock: '0',
+    minStock: '5'
   })
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
 
-  const handleEditProduct = (product: any) => {
-    setEditingProduct(product)
-    setFormData({
-      name: product.name,
-      category: product.category,
-      price: product.price.toString(),
-      stock: product.stock.toString(),
-      description: `${product.category} takımı. Kaliteli malzeme ve işçilik.`,
-      features: product.features.join('\n'),
-      image: product.image
-    })
-    setShowModal(true)
-  }
+  useEffect(() => {
+    if (status === 'loading') return
+    if (!session) router.push('/auth/signin')
+    else fetchProducts()
+  }, [session, status, router])
 
-  const handleDeleteProduct = (productId: number) => {
-    if (confirm('Bu ürünü silmek istediğinizden emin misiniz?')) {
-      setProducts(products.filter(product => product.id !== productId))
-      alert('Ürün başarıyla silindi!')
+  const fetchProducts = async () => {
+    try {
+      setLoading(true)
+      const response = await fetch('/api/products')
+      const data = await response.json()
+      
+      if (data.success) {
+        setProducts(data.data)
+      } else {
+        showError('Veri yüklenemedi', data.error)
+      }
+    } catch (error) {
+      showError('Bağlantı hatası', 'Ürün verileri yüklenirken hata oluştu')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -98,66 +73,132 @@ export default function KatalogPage() {
       name: '',
       category: 'Yatak Odası',
       price: '',
-      stock: '',
       description: '',
       features: '',
-      image: ''
+      initialStock: '0',
+      minStock: '5'
     })
+    setSelectedImage(null)
+    setImagePreview(null)
     setShowModal(true)
   }
 
-  const handleSubmitProduct = (e: React.FormEvent) => {
-    e.preventDefault()
-    console.log('Product form submitted:', formData)
-    
-    if (editingProduct) {
-      // Ürün güncelleme
-      setProducts(products.map(product => 
-        product.id === editingProduct.id 
-          ? {
-              ...product,
-              name: formData.name,
-              category: formData.category,
-              price: parseInt(formData.price),
-              stock: parseInt(formData.stock),
-              features: formData.features.split('\n').filter(f => f.trim()),
-              image: formData.image || product.image,
-              status: parseInt(formData.stock) > 0 ? 'Stokta' : 'Tükendi'
-            }
-          : product
-      ))
-      alert('Ürün başarıyla güncellendi!')
-    } else {
-      // Yeni ürün ekleme
-      const newProduct = {
-        id: Math.max(...products.map(p => p.id)) + 1,
-        name: formData.name,
-        category: formData.category,
-        price: parseInt(formData.price),
-        stock: parseInt(formData.stock),
-        features: formData.features.split('\n').filter(f => f.trim()),
-        image: formData.image || 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop',
-        status: parseInt(formData.stock) > 0 ? 'Stokta' : 'Tükendi'
-      }
-      setProducts([...products, newProduct])
-      alert('Ürün başarıyla eklendi!')
-    }
-    
-    setShowModal(false)
-    setEditingProduct(null)
+  const handleEditProduct = (product: Product) => {
+    setEditingProduct(product)
+    setFormData({
+      name: product.name,
+      category: product.category,
+      price: product.price.toString(),
+      description: product.description || '',
+      features: product.features.join('\n'),
+      initialStock: product.stock.toString(),
+      minStock: '5'
+    })
+    setSelectedImage(null)
+    setImagePreview(null)
+    setShowModal(true)
   }
 
-  useEffect(() => {
-    if (status === 'loading') return
-    if (!session) router.push('/auth/signin')
-  }, [session, status, router])
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Dosya boyutu kontrolü (5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        showError('Dosya çok büyük', 'Fotoğraf boyutu 5MB\'dan küçük olmalıdır')
+        return
+      }
 
-  if (status === 'loading') {
+      // Dosya tipi kontrolü
+      if (!file.type.startsWith('image/')) {
+        showError('Geçersiz dosya', 'Sadece resim dosyaları yükleyebilirsiniz')
+        return
+      }
+
+      setSelectedImage(file)
+      
+      // Önizleme oluştur
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleSubmitProduct = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    // Basic validation
+    if (!formData.name.trim() || !formData.price.trim()) {
+      showError('Eksik bilgi', 'Ürün adı ve fiyat alanları gereklidir')
+      return
+    }
+
+    try {
+      const url = editingProduct ? `/api/products/${editingProduct.id}` : '/api/products'
+      const method = editingProduct ? 'PUT' : 'POST'
+      
+      const requestData = {
+        name: formData.name.trim(),
+        category: formData.category,
+        price: parseFloat(formData.price),
+        description: formData.description.trim(),
+        features: formData.features.split('\n').filter(f => f.trim()),
+        initialStock: parseInt(formData.initialStock),
+        minStock: parseInt(formData.minStock)
+      }
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestData)
+      })
+
+      const data = await response.json()
+      
+      if (data.success) {
+        showSuccess(
+          editingProduct ? 'Ürün güncellendi' : 'Ürün eklendi',
+          editingProduct ? 'Ürün bilgileri başarıyla güncellendi' : 'Yeni ürün başarıyla eklendi'
+        )
+        setShowModal(false)
+        setEditingProduct(null)
+        fetchProducts()
+      } else {
+        showError('İşlem hatası', data.error)
+      }
+    } catch (error) {
+      showError('Bağlantı hatası', 'Ürün kaydedilirken hata oluştu')
+    }
+  }
+
+  const handleDeleteProduct = async (id: string, name: string) => {
+    if (!confirm(`${name} ürünü silinecek. Emin misiniz?`)) return
+
+    try {
+      const response = await fetch(`/api/products/${id}`, {
+        method: 'DELETE'
+      })
+      const data = await response.json()
+      
+      if (data.success) {
+        showSuccess('Ürün silindi', 'Ürün başarıyla silindi')
+        fetchProducts()
+      } else {
+        showError('Silme hatası', data.error)
+      }
+    } catch (error) {
+      showError('Bağlantı hatası', 'Ürün silinirken hata oluştu')
+    }
+  }
+
+  if (status === 'loading' || loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <Package className="h-12 w-12 text-blue-600 mx-auto mb-4 animate-spin" />
-          <p className="text-gray-600">Yükleniyor...</p>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Header />
+        <Navigation />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <Loading size="lg" text="Ürünler yükleniyor..." />
         </div>
       </div>
     )
@@ -177,20 +218,17 @@ export default function KatalogPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Stokta': return 'bg-green-100 text-green-800'
-      case 'Az Stok': return 'bg-yellow-100 text-yellow-800'
-      case 'Tükendi': return 'bg-red-100 text-red-800'
-      case 'Fazla Stok': return 'bg-blue-100 text-blue-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'Stokta': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+      case 'Az Stok': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
+      case 'Tükendi': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+      case 'Fazla Stok': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
     }
   }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
       <Header />
-
-      {/* Navigation */}
       <Navigation />
       
       {/* Page Header */}
@@ -202,7 +240,9 @@ export default function KatalogPage() {
                 <Package className="h-6 w-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Ürün Kataloğu</h1>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                  Ürün Kataloğu
+                </h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
                   Mobilya ürünlerinizi yönetin ve düzenleyin
                 </p>
@@ -222,22 +262,20 @@ export default function KatalogPage() {
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Search and Filters */}
         <div className="bg-white/90 backdrop-blur-sm dark:bg-gray-800/90 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700 p-6 mb-8">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Arama ve Filtreleme</h2>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">🔍 Arama ve Filtreleme</h2>
           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
               <input
                 type="text"
-                placeholder="Ürün adı, açıklama, özellık..."
+                placeholder="Ürün adı, açıklama..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
               />
             </div>
 
-            {/* Category Filter */}
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
@@ -248,7 +286,6 @@ export default function KatalogPage() {
               ))}
             </select>
 
-            {/* Stock Filter */}
             <select
               value={selectedStock}
               onChange={(e) => setSelectedStock(e.target.value)}
@@ -259,7 +296,6 @@ export default function KatalogPage() {
               ))}
             </select>
 
-            {/* Results Count */}
             <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
               <Filter className="h-4 w-4 mr-2" />
               {filteredProducts.length} ürün bulundu
@@ -268,136 +304,222 @@ export default function KatalogPage() {
         </div>
 
         {/* Products Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredProducts.map(product => (
-            <div key={product.id} className="bg-white/90 backdrop-blur-sm dark:bg-gray-800/90 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition-all duration-300 transform hover:scale-105">
-              {/* Product Image */}
-              <div className="h-48 bg-gray-200 dark:bg-gray-700 rounded-t-lg relative overflow-hidden">
-                <img 
-                  src={product.image} 
-                  alt={product.name}
-                  className="w-full h-full object-contain bg-white dark:bg-gray-600"
-                  onError={(e) => {
-                    e.currentTarget.src = 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop'
-                  }}
-                />
-                <div className="absolute top-2 right-2 flex gap-2">
-                  <button 
-                    onClick={() => handleEditProduct(product)}
-                    className="p-1 bg-white/90 dark:bg-gray-800/90 rounded-full shadow hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    title="Ürünü Düzenle"
-                  >
-                    <Edit className="h-4 w-4 text-gray-600 dark:text-gray-300" />
-                  </button>
-                  <button 
-                    onClick={() => handleDeleteProduct(product.id)}
-                    className="p-1 bg-white/90 dark:bg-gray-800/90 rounded-full shadow hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    title="Ürünü Sil"
-                  >
-                    <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Product Info */}
-              <div className="p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{product.name}</h3>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(product.status)}`}>
-                    {product.status}
-                  </span>
-                </div>
-                
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{product.category}</p>
-                
-                <div className="flex justify-between items-center mb-3">
-                  <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                    {product.price.toLocaleString('tr-TR')} ₺
-                  </span>
-                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                    Stok: {product.stock}
-                  </span>
-                </div>
-
-                {/* Features */}
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Özellikler:</p>
-                  <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-                    {product.features.map((feature, index) => (
-                      <li key={index} className="flex items-center">
-                        <span className="w-1 h-1 bg-gray-400 dark:bg-gray-500 rounded-full mr-2"></span>
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {filteredProducts.length === 0 && (
+        {filteredProducts.length === 0 ? (
           <div className="text-center py-12">
-            <div className="text-gray-400 text-lg mb-2">Ürün bulunamadı</div>
-            <p className="text-gray-600">Arama kriterlerinizi değiştirmeyi deneyin</p>
+            <Package className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+              {searchTerm || selectedCategory !== 'Tüm Kategoriler' || selectedStock !== 'Tüm Stoklar' 
+                ? 'Ürün bulunamadı' 
+                : 'Henüz ürün yok'
+              }
+            </h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-6">
+              {searchTerm || selectedCategory !== 'Tüm Kategoriler' || selectedStock !== 'Tüm Stoklar'
+                ? 'Arama kriterlerinizi değiştirmeyi deneyin' 
+                : 'İlk ürününüzü ekleyin'
+              }
+            </p>
+            {!searchTerm && selectedCategory === 'Tüm Kategoriler' && selectedStock === 'Tüm Stoklar' && (
+              <button 
+                onClick={handleAddProduct}
+                className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Yeni Ürün Ekle
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredProducts.map(product => (
+              <div key={product.id} className="bg-white/90 backdrop-blur-sm dark:bg-gray-800/90 rounded-lg shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition-all duration-300 transform hover:scale-105">
+                {/* Product Image with Initial Letter */}
+                <div className="h-48 bg-gradient-to-br from-blue-400 via-purple-500 to-pink-500 rounded-t-lg relative overflow-hidden flex items-center justify-center">
+                  {/* Product Initial Letter */}
+                  <div className="text-6xl font-bold text-white opacity-90">
+                    {product.name.charAt(0).toUpperCase()}
+                  </div>
+                  
+                  {/* Category Badge */}
+                  <div className="absolute top-2 left-2 bg-white/20 backdrop-blur-sm text-white px-2 py-1 rounded-full text-xs font-medium">
+                    {product.category}
+                  </div>
+                  
+                  {/* Action Buttons */}
+                  <div className="absolute top-2 right-2 flex gap-2">
+                    <button 
+                      onClick={() => handleEditProduct(product)}
+                      className="p-1.5 bg-white/20 backdrop-blur-sm rounded-full shadow hover:bg-white/30 transition-colors"
+                      title="Ürünü Düzenle"
+                    >
+                      <Edit className="h-4 w-4 text-white" />
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteProduct(product.id, product.name)}
+                      className="p-1.5 bg-white/20 backdrop-blur-sm rounded-full shadow hover:bg-white/30 transition-colors"
+                      title="Ürünü Sil"
+                    >
+                      <Trash2 className="h-4 w-4 text-white" />
+                    </button>
+                  </div>
+                  
+                  {/* Decorative Pattern */}
+                  <div className="absolute inset-0 opacity-10">
+                    <div className="absolute top-4 left-4 w-8 h-8 border-2 border-white rounded-full"></div>
+                    <div className="absolute bottom-4 right-4 w-6 h-6 border-2 border-white rounded-full"></div>
+                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-32 border border-white rounded-full opacity-30"></div>
+                  </div>
+                </div>
+
+                {/* Product Info */}
+                <div className="p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-semibold text-gray-900 dark:text-gray-100 text-sm line-clamp-2">
+                      {product.name}
+                    </h3>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(product.status)}`}>
+                      {product.status}
+                    </span>
+                  </div>
+                  
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{product.category}</p>
+                  
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                      {product.price.toLocaleString('tr-TR')} ₺
+                    </span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      Stok: {product.stock}
+                    </span>
+                  </div>
+
+                  {/* Features */}
+                  {product.features && product.features.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Özellikler:</p>
+                      <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
+                        {product.features.slice(0, 3).map((feature, index) => (
+                          <li key={index} className="flex items-center">
+                            <span className="w-1 h-1 bg-gray-400 dark:bg-gray-500 rounded-full mr-2"></span>
+                            {feature}
+                          </li>
+                        ))}
+                        {product.features.length > 3 && (
+                          <li className="text-blue-600 dark:text-blue-400 text-xs">
+                            +{product.features.length - 3} özellik daha
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  {product.description && (
+                    <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                      <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">
+                        {product.description}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </main>
 
-      {/* Add Product Modal */}
+      {/* Add/Edit Product Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                 {editingProduct ? 'Ürün Düzenle' : 'Yeni Ürün Ekle'}
               </h3>
               <button 
                 onClick={() => setShowModal(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 ✕
               </button>
             </div>
             
             <form onSubmit={handleSubmitProduct} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ürün Adı *
-                  </label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Ürün Adı *
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  placeholder="Ada Yatak Odası Takımı"
+                  required
+                />
+              </div>
+
+              {/* Ürün Fotoğrafı */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Ürün Fotoğrafı
+                </label>
+                <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 text-center hover:border-blue-400 transition-colors">
                   <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Ada Yatak Odası Takımı"
-                    required
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="hidden"
+                    id="product-image"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Fiyat (₺)
+                  <label 
+                    htmlFor="product-image" 
+                    className="cursor-pointer flex flex-col items-center"
+                  >
+                    {imagePreview ? (
+                      <div className="relative">
+                        <img 
+                          src={imagePreview} 
+                          alt="Ürün önizleme" 
+                          className="h-24 w-24 object-cover rounded-lg mb-2"
+                        />
+                        <div className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs cursor-pointer"
+                             onClick={(e) => {
+                               e.preventDefault()
+                               setSelectedImage(null)
+                               setImagePreview(null)
+                             }}>
+                          ×
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <Package className="h-12 w-12 text-gray-400 dark:text-gray-500 mb-2" />
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          Fotoğraf seçmek için tıklayın
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-500 mt-1">
+                          PNG, JPG, JPEG (Max 5MB)
+                        </span>
+                      </>
+                    )}
                   </label>
-                  <input
-                    type="number"
-                    value={formData.price}
-                    onChange={(e) => setFormData({...formData, price: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="15000"
-                  />
+                  {selectedImage && (
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                      ✓ {selectedImage.name} seçildi
+                    </p>
+                  )}
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Kategori *
                   </label>
                   <select 
                     value={formData.category}
                     onChange={(e) => setFormData({...formData, category: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                   >
                     <option>Yatak Odası</option>
                     <option>Oturma Odası</option>
@@ -405,98 +527,70 @@ export default function KatalogPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Stok Durumu
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Fiyat (₺) *
                   </label>
-                  <select className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                    <option>15 Stok</option>
-                    <option>Az Stok</option>
-                    <option>Tükendi</option>
-                  </select>
+                  <input
+                    type="number"
+                    value={formData.price}
+                    onChange={(e) => setFormData({...formData, price: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    placeholder="15000"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Başlangıç Stok
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.initialStock}
+                    onChange={(e) => setFormData({...formData, initialStock: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    placeholder="10"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Minimum Stok
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.minStock}
+                    onChange={(e) => setFormData({...formData, minStock: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    placeholder="5"
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Ürün Resmi
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                  {formData.image ? (
-                    <div className="space-y-3">
-                      <div className="w-full max-w-xs mx-auto">
-                        <img 
-                          src={formData.image} 
-                          alt="Önizleme" 
-                          className="w-full h-32 object-cover rounded-lg border border-gray-200"
-                          onError={(e) => {
-                            e.currentTarget.src = 'https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=300&fit=crop'
-                          }}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setFormData({...formData, image: ''})}
-                        className="text-red-600 hover:text-red-700 text-sm font-medium"
-                      >
-                        Görseli Kaldır
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="w-16 h-16 mx-auto mb-2 bg-gray-100 rounded-lg flex items-center justify-center">
-                        <Package className="h-8 w-8 text-gray-400" />
-                      </div>
-                      <input
-                        type="file"
-                        id="product-image"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (file) {
-                            const reader = new FileReader()
-                            reader.onload = (e) => {
-                              setFormData({...formData, image: e.target?.result as string})
-                            }
-                            reader.readAsDataURL(file)
-                          }
-                        }}
-                      />
-                      <label 
-                        htmlFor="product-image"
-                        className="inline-block bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-medium cursor-pointer transition-colors"
-                      >
-                        Fotoğraf Seç
-                      </label>
-                      <p className="text-xs text-gray-500">JPG, PNG dosyaları desteklenir (Max 5MB)</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Açıklama *
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Açıklama
                 </label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({...formData, description: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                   rows={3}
-                  placeholder="6 kişilik klasik yatak odası takımı. Masif ve sağlam yapısıyla uzun yıllar kullanım."
+                  placeholder="Ürün açıklaması..."
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Özellikler (Her satırda bir özellik)
                 </label>
                 <textarea
                   value={formData.features}
                   onChange={(e) => setFormData({...formData, features: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                   rows={4}
-                  placeholder="6 kişilik masa&#10;6 adet sandalye&#10;Masif meşe&#10;El işçiliği&#10;5 yıl garanti"
+                  placeholder="Masif ahşap&#10;Yatak 160*200&#10;Fırçalı görünüm&#10;5 yıl garanti"
                 />
               </div>
 
@@ -504,7 +598,7 @@ export default function KatalogPage() {
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
                 >
                   İptal
                 </button>

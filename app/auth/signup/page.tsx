@@ -23,14 +23,26 @@ export default function SignUpPage() {
     setIsLoading(true)
     setError('')
 
-    if (formData.password !== formData.confirmPassword) {
-      setError('Şifreler eşleşmiyor')
-      setIsLoading(false)
-      return
+    // Form validation
+    const validationRules = {
+      name: { required: true, minLength: 2 },
+      email: { required: true, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
+      password: { required: true, minLength: 6 },
+      confirmPassword: { required: true }
     }
 
-    if (formData.password.length < 6) {
-      setError('Şifre en az 6 karakter olmalıdır')
+    // Validate form
+    const errors: any = {}
+    if (!formData.name.trim()) errors.name = 'Ad gereklidir'
+    if (!formData.email.trim()) errors.email = 'Email gereklidir'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) errors.email = 'Geçerli bir email adresi girin'
+    if (!formData.password) errors.password = 'Şifre gereklidir'
+    else if (formData.password.length < 6) errors.password = 'Şifre en az 6 karakter olmalıdır'
+    if (!formData.confirmPassword) errors.confirmPassword = 'Şifre tekrarı gereklidir'
+    else if (formData.password !== formData.confirmPassword) errors.confirmPassword = 'Şifreler eşleşmiyor'
+
+    if (Object.keys(errors).length > 0) {
+      setError(Object.values(errors)[0] as string)
       setIsLoading(false)
       return
     }
@@ -42,20 +54,21 @@ export default function SignUpPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
+          name: formData.name.trim(),
+          email: formData.email.trim().toLowerCase(),
           password: formData.password,
         }),
       })
 
+      const data = await response.json()
+
       if (response.ok) {
         router.push('/auth/signin?message=Hesap başarıyla oluşturuldu')
       } else {
-        const data = await response.json()
         setError(data.message || 'Bir hata oluştu')
       }
     } catch (error) {
-      setError('Bir hata oluştu. Lütfen tekrar deneyin.')
+      setError('Bağlantı hatası. Lütfen tekrar deneyin.')
     } finally {
       setIsLoading(false)
     }

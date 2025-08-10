@@ -1,68 +1,58 @@
 import { NextResponse } from 'next/server'
+import { PrismaClient } from '@prisma/client'
+import { getCurrentUserId } from '@/lib/auth'
 
-// Mock data - gerçek uygulamada database'den gelecek
-const mockStockData = [
-  {
-    id: 1,
-    productName: 'Ada Yatak Odası Takımı',
-    code: 'YOT-001',
-    category: 'Yatak Odası',
-    currentStock: 15,
-    minStock: 5,
-    maxStock: 30,
-    unitPrice: 15000,
-    totalValue: 225000,
-    status: 'Stokta',
-    lastUpdated: '2024-01-15'
-  },
-  {
-    id: 2,
-    productName: 'Sandal Oturma Odası Takımı',
-    code: 'OTS-002',
-    category: 'Oturma Odası',
-    currentStock: 3,
-    minStock: 5,
-    maxStock: 20,
-    unitPrice: 12000,
-    totalValue: 36000,
-    status: 'Az Stok',
-    lastUpdated: '2024-01-14'
-  },
-  {
-    id: 3,
-    productName: 'Klasik Yemek Odası Takımı',
-    code: 'YEM-003',
-    category: 'Yemek Odası',
-    currentStock: 0,
-    minStock: 3,
-    maxStock: 15,
-    unitPrice: 18000,
-    totalValue: 0,
-    status: 'Tükendi',
-    lastUpdated: '2024-01-13'
-  },
-  {
-    id: 4,
-    productName: 'Modern TV Ünitesi',
-    code: 'TVU-004',
-    category: 'Oturma Odası',
-    currentStock: 25,
-    minStock: 8,
-    maxStock: 20,
-    unitPrice: 3500,
-    totalValue: 87500,
-    status: 'Fazla Stok',
-    lastUpdated: '2024-01-16'
-  }
-]
+const prisma = new PrismaClient()
 
 export async function GET() {
   try {
+    const userId = await getCurrentUserId()
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
+    const stockData = await prisma.stock.findMany({
+      include: {
+        product: {
+          where: {
+            userId: userId
+          }
+        }
+      },
+      where: {
+        product: {
+          userId: userId
+        }
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      }
+    })
+
+    // Transform data to match frontend expectations
+    const transformedStock = stockData.map(stock => ({
+      id: stock.id,
+      productName: stock.product.name,
+      code: `PRD-${stock.product.id.toString().padStart(3, '0')}`,
+      category: stock.product.category,
+      currentStock: stock.quantity,
+      minStock: stock.minQuantity,
+      maxStock: stock.maxQuantity,
+      unitPrice: stock.product.price,
+      totalValue: stock.quantity * stock.product.price,
+      status: getStockStatus(stock.quantity, stock.minQuantity, stock.maxQuantity),
+      lastUpdated: stock.updatedAt.toISOString().split('T')[0]
+    }))
+
     return NextResponse.json({
       success: true,
-      data: mockStockData
+      data: transformedStock
     })
   } catch (error) {
+    console.error('Stock GET error:', error)
     return NextResponse.json(
       { success: false, error: 'Stok verileri yüklenirken hata oluştu' },
       { status: 500 }
@@ -70,35 +60,72 @@ export async function GET() {
   }
 }
 
+function getStockStatus(quantity: number, minQuantity: number, maxQuantity: number): string {
+  if (quantity === 0) return 'Tükendi'
+  if (quantity < minQuantity) return 'Az Stok'
+  if (quantity > maxQuantity) return 'Fazla Stok'
+  return 'Stokta'
+}
+
 export async function PUT(request: Request) {
   try {
+    const userId = await getCurrentUserId()
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+
     const body = await request.json()
     const { id, currentStock } = body
     
-    // Stok güncelleme logic'i burada olacak
-    const updatedItem = mockStockData.find(item => item.id === id)
-    if (updatedItem) {
-      updatedItem.currentStock = currentStock
-      updatedItem.totalValue = currentStock * updatedItem.unitPrice
-      updatedItem.lastUpdated = new Date().toISOString().split('T')[0]
-      
-      // Stok durumunu güncelle
-      if (currentStock === 0) {
-        updatedItem.status = 'Tükendi'
-      } else if (currentStock < updatedItem.minStock) {
-        updatedItem.status = 'Az Stok'
-      } else if (currentStock > updatedItem.maxStock) {
-        updatedItem.status = 'Fazla Stok'
-      } else {
-        updatedItem.status = 'Stokta'
+    // Validation
+    if (!id || currentStock === undefined) {
+      return NextResponse.json(
+        { success: false, error: 'ID ve stok miktarı gereklidir' },
+        { status: 400 }
+      )
+    }
+
+    // Update stock in database (only if user owns the product)
+    const updatedStock = await prisma.stock.update({
+      where: { 
+        id: parseInt(id),
+        product: {
+          userId: userId
+        }
+      },
+      data: { 
+        quantity: parseInt(currentStock),
+        updatedAt: new Date()
+      },
+      include: {
+        product: true
       }
+    })
+
+    // Transform response
+    const transformedStock = {
+      id: updatedStock.id,
+      productName: updatedStock.product.name,
+      code: `PRD-${updatedStock.product.id.toString().padStart(3, '0')}`,
+      category: updatedStock.product.category,
+      currentStock: updatedStock.quantity,
+      minStock: updatedStock.minQuantity,
+      maxStock: updatedStock.maxQuantity,
+      unitPrice: updatedStock.product.price,
+      totalValue: updatedStock.quantity * updatedStock.product.price,
+      status: getStockStatus(updatedStock.quantity, updatedStock.minQuantity, updatedStock.maxQuantity),
+      lastUpdated: updatedStock.updatedAt.toISOString().split('T')[0]
     }
     
     return NextResponse.json({
       success: true,
-      data: updatedItem
+      data: transformedStock
     })
   } catch (error) {
+    console.error('Stock PUT error:', error)
     return NextResponse.json(
       { success: false, error: 'Stok güncellenirken hata oluştu' },
       { status: 500 }
