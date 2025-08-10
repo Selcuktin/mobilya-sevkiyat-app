@@ -192,7 +192,7 @@ export default function HomePage() {
               href="/sevkiyat"
               className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
             >
-              Tüm Sevkiyatları Görüntüle →
+              Tüm Sevkiyatları Görüntüle &rarr;
             </Link>
           </div>
 
@@ -276,7 +276,7 @@ export default function HomePage() {
                     href="/sevkiyat" 
                     className="text-blue-600 hover:text-blue-800 text-sm font-medium mt-2 inline-block"
                   >
-                    İlk sevkiyatınızı oluşturun →
+                    İlk sevkiyatınızı oluşturun &rarr;
                   </Link>
                 </div>
               )}
@@ -391,7 +391,7 @@ export default function HomePage() {
                     Ürünlerinizi ve stoklarınızı yönetin
                   </p>
                   <div className="inline-flex items-center text-sm text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-900/30 px-4 py-2 rounded-full group-hover:bg-blue-100 dark:group-hover:bg-blue-900/50 transition-colors">
-                    Katalog Sayfasına Git →
+                    Katalog Sayfasına Git &rarr;
                   </div>
                 </div>
               </div>
@@ -414,7 +414,7 @@ export default function HomePage() {
                     Müşteri bilgilerini kaydedin ve yönetin
                   </p>
                   <div className="inline-flex items-center text-sm text-purple-600 dark:text-purple-400 font-semibold bg-purple-50 dark:bg-purple-900/30 px-4 py-2 rounded-full group-hover:bg-purple-100 dark:group-hover:bg-purple-900/50 transition-colors">
-                    Müşteriler Sayfasına Git →
+                    Müşteriler Sayfasına Git &rarr;
                   </div>
                 </div>
               </div>
@@ -437,7 +437,7 @@ export default function HomePage() {
                     Sevkiyat süreçlerini takip edin ve yönetin
                   </p>
                   <div className="inline-flex items-center text-sm text-orange-600 dark:text-orange-400 font-semibold bg-orange-50 dark:bg-orange-900/30 px-4 py-2 rounded-full group-hover:bg-orange-100 dark:group-hover:bg-orange-900/50 transition-colors">
-                    Sevkiyat Sayfasına Git →
+                    Sevkiyat Sayfasına Git &rarr;
                   </div>
                 </div>
               </div>
@@ -462,7 +462,7 @@ export default function HomePage() {
                 href="/raporlar"
                 className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
               >
-                Detaylı Raporlar →
+                Detaylı Raporlar &rarr;
               </Link>
             </div>
 
@@ -486,7 +486,7 @@ export default function HomePage() {
               href="/raporlar"
               className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-3 rounded-xl hover:from-purple-700 hover:to-indigo-700 transition-all duration-300 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
             >
-              Tüm Raporları Görüntüle →
+              Tüm Raporları Görüntüle &rarr;
             </Link>
           </div>
 
