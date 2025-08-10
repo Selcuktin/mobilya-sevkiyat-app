@@ -192,7 +192,7 @@ export function AdvancedSearch({ onSearch, categories, statusOptions, placeholde
         <div className="mt-4 flex flex-wrap gap-2">
           {filters.query && (
             <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm">
-              Arama: "{filters.query}"
+              Arama: &ldquo;{filters.query}&rdquo;
             </span>
           )}
           {filters.category && (
