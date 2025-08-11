@@ -49,7 +49,7 @@ export async function GET(
     const transformedCustomer = {
       id: customer.id,
       name: customer.name,
-      email: customer.email,
+      email: ('email' in customer ? (customer as any).email : null) as string | null,
       phone: customer.phone,
       address: customer.address,
       city: customer.city,
@@ -126,7 +126,7 @@ export async function PUT(
     const transformedCustomer = {
       id: updatedCustomer.id,
       name: updatedCustomer.name,
-      email: updatedCustomer.email,
+      email: ('email' in updatedCustomer ? (updatedCustomer as any).email : null) as string | null,
       phone: updatedCustomer.phone,
       address: updatedCustomer.address,
       city: updatedCustomer.city,
