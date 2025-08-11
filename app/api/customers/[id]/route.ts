@@ -8,6 +8,12 @@ const prisma = new PrismaClient()
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+function getShipmentAmount(shipment: any): number {
+  if (typeof shipment?.totalAmount === 'number') return shipment.totalAmount
+  if (typeof shipment?.amount === 'number') return shipment.amount
+  return 0
+}
+
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
@@ -54,7 +60,7 @@ export async function GET(
       address: customer.address,
       city: customer.city,
       totalOrders: shipments.length,
-      totalSpent: shipments.reduce((sum, s) => sum + s.totalAmount, 0),
+      totalSpent: shipments.reduce((sum, shipment) => sum + getShipmentAmount(shipment), 0),
       lastOrderDate: shipments.length > 0 
         ? shipments[0].createdAt.toISOString()
         : null
@@ -131,7 +137,7 @@ export async function PUT(
       address: updatedCustomer.address,
       city: updatedCustomer.city,
       totalOrders: shipments.length,
-      totalSpent: shipments.reduce((sum, s) => sum + s.totalAmount, 0),
+      totalSpent: shipments.reduce((sum, shipment) => sum + getShipmentAmount(shipment), 0),
       lastOrderDate: shipments.length > 0 
         ? shipments[0].createdAt.toISOString()
         : null
