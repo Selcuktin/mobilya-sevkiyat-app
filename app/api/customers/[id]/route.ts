@@ -5,7 +5,7 @@ import { getCurrentUserId } from '@/lib/auth'
 const prisma = new PrismaClient()
 
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -41,13 +41,13 @@ export async function GET(
     const transformedCustomer = {
       id: customer.id,
       name: customer.name,
-      email: customer.email,
-      phone: customer.phone,
-      address: customer.address,
-      city: customer.city,
-      totalOrders: customer.shipments.length,
-      totalSpent: customer.shipments.reduce((sum: number, s: any) => sum + s.totalAmount, 0),
-      lastOrderDate: customer.shipments.length > 0 
+      email: customer.email || '',
+      phone: customer.phone || '',
+      address: customer.address || '',
+      city: customer.city || '',
+      totalOrders: customer.shipments?.length || 0,
+      totalSpent: customer.shipments?.reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0) || 0,
+      lastOrderDate: customer.shipments && customer.shipments.length > 0 
         ? customer.shipments[0].createdAt.toISOString()
         : null
     }
@@ -66,7 +66,7 @@ export async function GET(
 }
 
 export async function PUT(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -78,10 +78,9 @@ export async function PUT(
       )
     }
 
-    const body = await _request.json()
+    const body = await request.json()
     const { name, email, phone, address, city } = body
 
-    // Update customer
     const updatedCustomer = await prisma.customer.update({
       where: { id: params.id },
       data: {
@@ -99,13 +98,13 @@ export async function PUT(
     const transformedCustomer = {
       id: updatedCustomer.id,
       name: updatedCustomer.name,
-      email: updatedCustomer.email,
-      phone: updatedCustomer.phone,
-      address: updatedCustomer.address,
-      city: updatedCustomer.city,
-      totalOrders: updatedCustomer.shipments.length,
-      totalSpent: updatedCustomer.shipments.reduce((sum: number, s: any) => sum + s.totalAmount, 0),
-      lastOrderDate: updatedCustomer.shipments.length > 0 
+      email: updatedCustomer.email || '',
+      phone: updatedCustomer.phone || '',
+      address: updatedCustomer.address || '',
+      city: updatedCustomer.city || '',
+      totalOrders: updatedCustomer.shipments?.length || 0,
+      totalSpent: updatedCustomer.shipments?.reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0) || 0,
+      lastOrderDate: updatedCustomer.shipments && updatedCustomer.shipments.length > 0 
         ? updatedCustomer.shipments[0].createdAt.toISOString()
         : null
     }
@@ -136,7 +135,6 @@ export async function DELETE(
       )
     }
 
-    // Delete customer
     await prisma.customer.delete({
       where: { id: params.id }
     })
