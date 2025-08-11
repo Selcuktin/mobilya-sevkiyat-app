@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient, Prisma } from '@prisma/client'
+import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
 const prisma = new PrismaClient()
@@ -7,12 +7,6 @@ const prisma = new PrismaClient()
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-function getShipmentAmount(shipment: any): number {
-  if (typeof shipment?.totalAmount === 'number') return shipment.totalAmount
-  if (typeof shipment?.amount === 'number') return shipment.amount
-  return 0
-}
 
 export async function GET(
   request: Request,
@@ -41,7 +35,7 @@ export async function GET(
       )
     }
 
-    // Get shipments separately to avoid type issues
+    // Get shipments separately
     const shipments = await prisma.shipment.findMany({
       where: {
         customerId: customer.id,
@@ -55,14 +49,14 @@ export async function GET(
     const transformedCustomer = {
       id: customer.id,
       name: customer.name,
-      email: ('email' in customer ? (customer as any).email : null) as string | null,
+      email: customer.email,
       phone: customer.phone,
       address: customer.address,
       city: customer.city,
       totalOrders: shipments.length,
-      totalSpent: shipments.reduce((sum, shipment) => sum + getShipmentAmount(shipment), 0),
+      totalSpent: shipments.reduce((sum, s) => sum + (s.totalAmount || 0), 0),
       lastOrderDate: shipments.length > 0 
-        ? shipments[0].createdAt.toISOString()
+        ? shipments[0].createdAt.toISOString().split('T')[0]
         : null
     }
 
@@ -110,16 +104,17 @@ export async function PUT(
       )
     }
 
-    const dataToUpdate: Prisma.CustomerUpdateInput = {}
-    if (name) dataToUpdate.name = name
-    if (email) dataToUpdate.email = email
-    if (phone) dataToUpdate.phone = phone
-    if (address !== undefined) dataToUpdate.address = address
-    if (city !== undefined) dataToUpdate.city = city
+    // Build update data object manually to avoid type issues
+    const updateData: any = {}
+    if (name !== undefined) updateData.name = name
+    if (email !== undefined) updateData.email = email
+    if (phone !== undefined) updateData.phone = phone
+    if (address !== undefined) updateData.address = address
+    if (city !== undefined) updateData.city = city
 
     const updatedCustomer = await prisma.customer.update({
       where: { id: params.id },
-      data: dataToUpdate,
+      data: updateData
     })
 
     // Get shipments separately
@@ -133,14 +128,14 @@ export async function PUT(
     const transformedCustomer = {
       id: updatedCustomer.id,
       name: updatedCustomer.name,
-      email: ('email' in updatedCustomer ? (updatedCustomer as any).email : null) as string | null,
+      email: updatedCustomer.email,
       phone: updatedCustomer.phone,
       address: updatedCustomer.address,
       city: updatedCustomer.city,
       totalOrders: shipments.length,
-      totalSpent: shipments.reduce((sum, shipment) => sum + getShipmentAmount(shipment), 0),
+      totalSpent: shipments.reduce((sum, s) => sum + (s.totalAmount || 0), 0),
       lastOrderDate: shipments.length > 0 
-        ? shipments[0].createdAt.toISOString()
+        ? shipments[0].createdAt.toISOString().split('T')[0]
         : null
     }
     
