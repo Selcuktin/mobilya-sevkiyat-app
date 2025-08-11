@@ -2,6 +2,12 @@
 
 Modern mobilya sevkiyat ve stok yönetim sistemi. Next.js 14 ve Tailwind CSS ile geliştirilmiştir.
 
+# Sevkiyat Uygulaması
+
+Bu, sevkiyatları, müşterileri ve ürünleri yönetmek için tasarlanmış bir Next.js uygulamasıdır.
+
+_Son güncelleme: Geliştirme ortamındaki build hataları giderildi._
+
 ## Özellikler
 
 - 📦 Ürün Kataloğu Yönetimi
