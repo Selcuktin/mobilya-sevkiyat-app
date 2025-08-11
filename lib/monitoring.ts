@@ -219,9 +219,9 @@ class PerformanceMonitor {
   getAllMetrics(): Record<string, any> {
     const result: Record<string, any> = {}
     
-    for (const [label] of this.metrics) {
+    this.metrics.forEach((_, label) => {
       result[label] = this.getMetrics(label)
-    }
+    })
     
     return result
   }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { Search, Filter, Plus, Eye, Edit, Trash2, Truck, Calendar, MapPin, Package, User } from 'lucide-react'
@@ -41,13 +41,7 @@ export default function SevkiyatPage() {
   const [selectedStatus, setSelectedStatus] = useState('Tümü')
   const [expandedShipments, setExpandedShipments] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
-    if (status === 'loading') return
-    if (!session) router.push('/auth/signin')
-    else fetchShipments()
-  }, [session, status, router])
-
-  const fetchShipments = async () => {
+  const fetchShipments = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch('/api/shipments')
@@ -63,7 +57,13 @@ export default function SevkiyatPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showError])
+
+  useEffect(() => {
+    if (status === 'loading') return
+    if (!session) router.push('/auth/signin')
+    else fetchShipments()
+  }, [session, status, router, fetchShipments])
 
   const deleteShipment = async (id: string) => {
     if (!confirm('Bu sevkiyatı silmek istediğinizden emin misiniz?')) return

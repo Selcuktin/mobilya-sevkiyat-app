@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -22,13 +22,7 @@ export default function StokPage() {
   const [selectedCategory, setSelectedCategory] = useState('Tüm Kategoriler')
   const [selectedStatus, setSelectedStatus] = useState('Tüm Durumlar')
 
-  useEffect(() => {
-    if (status === 'loading') return
-    if (!session) router.push('/auth/signin')
-    else fetchStockData()
-  }, [session, status, router])
-
-  const fetchStockData = async () => {
+  const fetchStockData = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch('/api/stock')
@@ -44,7 +38,13 @@ export default function StokPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showError])
+
+  useEffect(() => {
+    if (status === 'loading') return
+    if (!session) router.push('/auth/signin')
+    else fetchStockData()
+  }, [session, status, router, fetchStockData])
 
   if (status === 'loading') {
     return (

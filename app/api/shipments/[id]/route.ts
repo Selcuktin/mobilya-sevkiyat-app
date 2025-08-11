@@ -5,7 +5,7 @@ import { getCurrentUserId } from '@/lib/auth'
 const prisma = new PrismaClient()
 
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -19,7 +19,7 @@ export async function GET(
 
     const shipment = await prisma.shipment.findFirst({
       where: {
-        id: parseInt(params.id),
+        id: params.id,
         userId: userId
       },
       include: {
@@ -40,7 +40,7 @@ export async function GET(
     }
 
     const transformedShipment = {
-      id: shipment.id.toString(),
+      id: shipment.id,
       orderNumber: `SHP-${shipment.id.toString().padStart(4, '0')}`,
       customerName: shipment.customer.name,
       customerEmail: shipment.customer.email,
@@ -50,8 +50,8 @@ export async function GET(
       status: shipment.status,
       totalAmount: shipment.totalAmount,
       itemCount: shipment.items.length,
-      items: shipment.items.map(item => ({
-        id: item.id.toString(),
+      items: shipment.items.map((item: any) => ({
+        id: item.id,
         productName: item.product.name,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -90,48 +90,13 @@ export async function PUT(
     const body = await request.json()
     const { status, address, city, deliveryDate } = body
 
-    // Input validation
-    const validStatuses = ['PENDING', 'SHIPPED', 'DELIVERED', 'CANCELLED']
-    if (status && !validStatuses.includes(status)) {
-      return NextResponse.json(
-        { success: false, error: 'Geçersiz durum değeri' },
-        { status: 400 }
-      )
-    }
-
-    // Check if shipment exists and belongs to user
-    const existingShipment = await prisma.shipment.findFirst({
-      where: {
-        id: parseInt(params.id),
-        userId: userId
-      },
-      include: {
-        customer: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
-      }
-    })
-
-    if (!existingShipment) {
-      return NextResponse.json(
-        { success: false, error: 'Sevkiyat bulunamadı' },
-        { status: 404 }
-      )
-    }
-
-    // Update shipment
     const updatedShipment = await prisma.shipment.update({
-      where: { id: parseInt(params.id) },
+      where: { id: params.id },
       data: {
-        ...(status && { status }),
-        ...(address !== undefined && { address: address?.trim() || null }),
-        ...(city !== undefined && { city: city?.trim() || null }),
-        ...(deliveryDate !== undefined && { 
-          deliveryDate: deliveryDate ? new Date(deliveryDate) : null 
-        })
+        status: status || 'PENDING',
+        address: address || '',
+        city: city || '',
+        deliveryDate: deliveryDate ? new Date(deliveryDate) : null
       },
       include: {
         customer: true,
@@ -143,29 +108,16 @@ export async function PUT(
       }
     })
 
-    // Return formatted response
     const transformedShipment = {
-      id: updatedShipment.id.toString(),
+      id: updatedShipment.id,
       orderNumber: `SHP-${updatedShipment.id.toString().padStart(4, '0')}`,
       customerName: updatedShipment.customer.name,
-      customerEmail: updatedShipment.customer.email,
-      customerPhone: updatedShipment.customer.phone,
-      address: updatedShipment.address,
-      city: updatedShipment.city,
       status: updatedShipment.status,
       totalAmount: updatedShipment.totalAmount,
-      itemCount: updatedShipment.items.length,
-      items: updatedShipment.items.map(item => ({
-        id: item.id.toString(),
-        productName: item.product.name,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.quantity * item.unitPrice
-      })),
       createdAt: updatedShipment.createdAt.toISOString().split('T')[0],
       deliveryDate: updatedShipment.deliveryDate?.toISOString().split('T')[0] || null
     }
-    
+
     return NextResponse.json({
       success: true,
       data: transformedShipment
@@ -180,7 +132,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  request: Request,
+  _request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -192,68 +144,13 @@ export async function DELETE(
       )
     }
 
-    // Check if shipment exists and belongs to user
-    const existingShipment = await prisma.shipment.findFirst({
-      where: {
-        id: parseInt(params.id),
-        userId: userId
-      },
-      include: {
-        items: {
-          include: {
-            product: true
-          }
-        }
-      }
-    })
-
-    if (!existingShipment) {
-      return NextResponse.json(
-        { success: false, error: 'Sevkiyat bulunamadı' },
-        { status: 404 }
-      )
-    }
-
-    // Check if shipment can be deleted (only PENDING shipments)
-    if (existingShipment.status === 'DELIVERED') {
-      return NextResponse.json(
-        { success: false, error: 'Teslim edilmiş sevkiyatlar silinemez' },
-        { status: 400 }
-      )
-    }
-
-    // Delete shipment and restore stock in a transaction
-    await prisma.$transaction(async (tx) => {
-      // Restore stock for each item
-      for (const item of existingShipment.items) {
-        const stock = await tx.stock.findFirst({
-          where: { productId: item.productId }
-        })
-
-        if (stock) {
-          await tx.stock.update({
-            where: { id: stock.id },
-            data: {
-              quantity: stock.quantity + item.quantity
-            }
-          })
-        }
-      }
-
-      // Delete shipment items
-      await tx.shipmentItem.deleteMany({
-        where: { shipmentId: parseInt(params.id) }
-      })
-
-      // Delete shipment
-      await tx.shipment.delete({
-        where: { id: parseInt(params.id) }
-      })
+    await prisma.shipment.delete({
+      where: { id: params.id }
     })
 
     return NextResponse.json({
       success: true,
-      message: 'Sevkiyat başarıyla silindi ve stok geri yüklendi'
+      message: 'Sevkiyat başarıyla silindi'
     })
   } catch (error) {
     console.error('Shipment DELETE error:', error)

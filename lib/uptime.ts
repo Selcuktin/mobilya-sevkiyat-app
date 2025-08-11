@@ -281,12 +281,12 @@ class UptimeMonitor {
   getAllStats(): UptimeStats[] {
     const stats: UptimeStats[] = [];
     
-    for (const checkId of this.checks.keys()) {
+    this.checks.forEach((_check, checkId) => {
       const stat = this.getStats(checkId);
       if (stat) {
         stats.push(stat);
       }
-    }
+    });
     
     return stats;
   }
@@ -307,9 +307,9 @@ class UptimeMonitor {
 
   // Cleanup
   destroy(): void {
-    for (const checkId of this.intervals.keys()) {
+    this.intervals.forEach((_interval, checkId) => {
       this.stopCheck(checkId);
-    }
+    });
     this.checks.clear();
     this.results.clear();
   }

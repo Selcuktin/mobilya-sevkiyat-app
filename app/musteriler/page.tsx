@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { Search, Filter, Plus, Edit, Trash2, User, Package } from 'lucide-react'
@@ -39,13 +39,7 @@ export default function MusterilerPage() {
     city: ''
   })
 
-  useEffect(() => {
-    if (status === 'loading') return
-    if (!session) router.push('/auth/signin')
-    else fetchCustomers()
-  }, [session, status, router])
-
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch('/api/customers')
@@ -61,7 +55,13 @@ export default function MusterilerPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showError])
+
+  useEffect(() => {
+    if (status === 'loading') return
+    if (!session) router.push('/auth/signin')
+    else fetchCustomers()
+  }, [session, status, router, fetchCustomers])
 
   const handleAddCustomer = () => {
     setEditingCustomer(null)

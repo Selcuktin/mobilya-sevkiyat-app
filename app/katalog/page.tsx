@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { Search, Filter, Plus, Edit, Trash2, Package } from 'lucide-react'
+import Image from 'next/image'
 import Navigation from '../../components/Layout/Navigation'
 import Header from '../../components/Layout/Header'
 import { Loading } from '../../components/ui/Loading'
@@ -43,13 +44,7 @@ export default function KatalogPage() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (status === 'loading') return
-    if (!session) router.push('/auth/signin')
-    else fetchProducts()
-  }, [session, status, router])
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch('/api/products')
@@ -65,7 +60,15 @@ export default function KatalogPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showError])
+
+  useEffect(() => {
+    if (status === 'loading') return
+    if (!session) router.push('/auth/signin')
+    else fetchProducts()
+  }, [session, status, router, fetchProducts])
+
+  
 
   const handleAddProduct = () => {
     setEditingProduct(null)
@@ -477,9 +480,11 @@ export default function KatalogPage() {
                   >
                     {imagePreview ? (
                       <div className="relative">
-                        <img 
+                        <Image 
                           src={imagePreview} 
                           alt="Ürün önizleme" 
+                          width={96}
+                          height={96}
                           className="h-24 w-24 object-cover rounded-lg mb-2"
                         />
                         <div className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs cursor-pointer"

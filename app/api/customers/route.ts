@@ -23,7 +23,8 @@ export async function GET() {
           select: {
             id: true,
             status: true,
-            totalAmount: true
+            totalAmount: true,
+            createdAt: true
           }
         }
       },

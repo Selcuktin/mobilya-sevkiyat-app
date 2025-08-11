@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { ShoppingCart } from 'lucide-react'
 import { Loading } from '../ui/Loading'
 import { useToast } from '../../contexts/ToastContext'
@@ -22,11 +22,7 @@ export function RecentShipments() {
   const [loading, setLoading] = useState(true)
   const { showError } = useToast()
 
-  useEffect(() => {
-    fetchRecentShipments()
-  }, [])
-
-  const fetchRecentShipments = async () => {
+  const fetchRecentShipments = useCallback(async () => {
     try {
       const response = await fetch('/api/shipments?limit=5')
       const data = await response.json()
@@ -41,7 +37,11 @@ export function RecentShipments() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showError])
+
+  useEffect(() => {
+    fetchRecentShipments()
+  }, [fetchRecentShipments])
 
   const getStatusColor = (status: string) => {
     switch (status) {

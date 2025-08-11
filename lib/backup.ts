@@ -285,7 +285,7 @@ export class BackupManager {
     
     try {
       const files = await fs.readdir(backupDir)
-      const metaFiles = files.filter(f => f.endsWith('.meta.json'))
+      const metaFiles = files.filter((f: string) => f.endsWith('.meta.json'))
       
       const backups: BackupMetadata[] = []
       

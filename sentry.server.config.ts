@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 
 Sentry.init({
-  dsn: process.env.SENTRY_DSN,
+  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
   
   // Performance monitoring
   tracesSampleRate: 1.0,
@@ -14,19 +14,36 @@ Sentry.init({
   
   // Server-specific configuration
   integrations: [
-    new Sentry.Integrations.Http({ tracing: true }),
-    new Sentry.Integrations.Express({ app: undefined }),
+    Sentry.httpIntegration(),
   ],
-  
+
   // Error filtering
   beforeSend(event, hint) {
-    // Add server context
-    if (event.request) {
-      event.tags = {
-        ...event.tags,
-        component: "server"
-      };
+    // Filter out known non-critical errors
+    if (event.exception) {
+      const error = hint?.originalException;
+      const message = error instanceof Error ? error.message : String(error);
+      
+      // Skip network errors
+      if (message.includes('Network Error')) {
+        return null;
+      }
+      // Skip cancelled requests
+      if (message.includes('AbortError')) {
+        return null;
+      }
+      // Skip database connection errors in development
+      if (process.env.NODE_ENV === 'development' && message.includes('ECONNREFUSED')) {
+        return null;
+      }
     }
     return event;
+  },
+  
+  // User context
+  initialScope: {
+    tags: {
+      component: "server"
+    }
   }
 });

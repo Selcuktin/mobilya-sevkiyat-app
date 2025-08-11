@@ -128,7 +128,7 @@ export const POST = withRateLimit(async (request: NextRequest) => {
           category: sanitizedData.category,
           price: parseFloat(sanitizedData.price),
           description: sanitizedData.description || null,
-          features: sanitizedData.features.filter(f => f.trim()),
+          features: sanitizedData.features.filter((f: string) => f.trim()),
           userId: userId
         }
       })
@@ -137,9 +137,9 @@ export const POST = withRateLimit(async (request: NextRequest) => {
       const stock = await tx.stock.create({
         data: {
           productId: product.id,
-          quantity: parseInt(sanitizedData.initialStock.toString()),
-          minQuantity: parseInt(sanitizedData.minStock.toString()),
-          maxQuantity: parseInt(sanitizedData.minStock.toString()) * 5 // Default max is 5x min
+          quantity: Number(sanitizedData.initialStock) || 0,
+          minQuantity: Number(sanitizedData.minStock) || 0,
+          maxQuantity: (Number(sanitizedData.minStock) || 0) * 5 // Default max is 5x min
         }
       })
 

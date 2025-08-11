@@ -20,16 +20,16 @@ Sentry.init({
   beforeSend(event, hint) {
     // Filter out known non-critical errors
     if (event.exception) {
-      const error = hint.originalException;
-      if (error && error.message) {
-        // Skip network errors
-        if (error.message.includes('Network Error')) {
-          return null;
-        }
-        // Skip cancelled requests
-        if (error.message.includes('AbortError')) {
-          return null;
-        }
+      const error = hint?.originalException;
+      const message = error instanceof Error ? error.message : String(error);
+      
+      // Skip network errors
+      if (message.includes('Network Error')) {
+        return null;
+      }
+      // Skip cancelled requests
+      if (message.includes('AbortError')) {
+        return null;
       }
     }
     return event;

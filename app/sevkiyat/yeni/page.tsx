@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { X, Calendar } from 'lucide-react'
@@ -36,13 +36,7 @@ export default function YeniSevkiyatPage() {
     address: ''
   })
 
-  useEffect(() => {
-    if (status === 'loading') return
-    if (!session) router.push('/auth/signin')
-    else fetchProducts()
-  }, [session, status, router])
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch('/api/products')
@@ -56,7 +50,13 @@ export default function YeniSevkiyatPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showError])
+
+  useEffect(() => {
+    if (status === 'loading') return
+    if (!session) router.push('/auth/signin')
+    else fetchProducts()
+  }, [session, status, router, fetchProducts])
 
   const handleProductChange = (productId: string) => {
     const product = products.find(p => p.id === productId)

@@ -1,11 +1,11 @@
-import NextAuth, { AuthOptions } from 'next-auth'
+import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
-export const authOptions: AuthOptions = {
+const handler = NextAuth({
   providers: [
     CredentialsProvider({
       name: 'credentials',
@@ -14,42 +14,31 @@ export const authOptions: AuthOptions = {
         password: { label: 'Password', type: 'password' }
       },
       async authorize(credentials) {
-        console.log('Login attempt:', credentials)
-
         if (!credentials?.email || !credentials?.password) {
-          console.log('Missing credentials')
           return null
         }
 
         try {
-          // Database'den kullanıcıyı bul
           const user = await prisma.user.findUnique({
-            where: {
-              email: credentials.email
-            }
+            where: { email: credentials.email }
           })
 
           if (!user) {
-            console.log('User not found')
             return null
           }
 
-          // Şifre kontrolü
           const isPasswordValid = await bcrypt.compare(credentials.password, user.password)
 
           if (!isPasswordValid) {
-            console.log('Invalid password')
             return null
           }
 
-          console.log('Login successful:', user)
           return {
             id: user.id,
             email: user.email,
             name: user.name,
           }
         } catch (error) {
-          console.error('Auth error:', error)
           return null
         }
       }
@@ -74,10 +63,7 @@ export const authOptions: AuthOptions = {
       }
       return session
     },
-  },
-  debug: true
-}
-
-const handler = NextAuth(authOptions)
+  }
+})
 
 export { handler as GET, handler as POST }

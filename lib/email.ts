@@ -24,7 +24,7 @@ interface EmailOptions {
   to: string | string[];
   cc?: string | string[];
   bcc?: string | string[];
-  subject: string;
+  subject?: string;
   html?: string;
   text?: string;
   attachments?: Array<{
@@ -112,22 +112,28 @@ class EmailManager {
         }
       }
 
+      // Ensure subject is present after potential template processing
+      if (!options.subject) {
+        throw new Error('Email subject is required. Provide a subject or a template that defines one.');
+      }
+      const optionsWithSubject = { ...options, subject: options.subject } as EmailOptions & { subject: string };
+
       switch (this.config.provider) {
         case 'sendgrid':
-          return await this.sendWithSendGrid(options);
+          return await this.sendWithSendGrid(optionsWithSubject);
         case 'nodemailer':
-          return await this.sendWithNodemailer(options);
+          return await this.sendWithNodemailer(optionsWithSubject);
         default:
           throw new Error(`Unsupported email provider: ${this.config.provider}`);
       }
     } catch (error) {
       logger.error('Failed to send email', error, { to: options.to, subject: options.subject });
-      return { success: false, error: error.message };
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
   // Send with SendGrid
-  private async sendWithSendGrid(options: EmailOptions): Promise<EmailResult> {
+  private async sendWithSendGrid(options: EmailOptions & { subject: string }): Promise<EmailResult> {
     if (!this.sendgrid) {
       throw new Error('SendGrid not initialized');
     }
@@ -160,7 +166,7 @@ class EmailManager {
   }
 
   // Send with Nodemailer
-  private async sendWithNodemailer(options: EmailOptions): Promise<EmailResult> {
+  private async sendWithNodemailer(options: EmailOptions & { subject: string }): Promise<EmailResult> {
     if (!this.nodemailer) {
       throw new Error('Nodemailer not initialized');
     }

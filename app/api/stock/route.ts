@@ -16,11 +16,7 @@ export async function GET() {
 
     const stockData = await prisma.stock.findMany({
       include: {
-        product: {
-          where: {
-            userId: userId
-          }
-        }
+        product: true
       },
       where: {
         product: {
@@ -91,13 +87,13 @@ export async function PUT(request: Request) {
     // Update stock in database (only if user owns the product)
     const updatedStock = await prisma.stock.update({
       where: { 
-        id: parseInt(id),
+        id: id,
         product: {
           userId: userId
         }
       },
       data: { 
-        quantity: parseInt(currentStock),
+        quantity: Number(currentStock) || 0,
         updatedAt: new Date()
       },
       include: {

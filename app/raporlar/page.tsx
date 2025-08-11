@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { 
@@ -68,13 +68,7 @@ export default function RaporlarPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('30') // days
   const [downloadingReport, setDownloadingReport] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (status === 'loading') return
-    if (!session) router.push('/auth/signin')
-    else fetchReportData()
-  }, [session, status, router, selectedPeriod])
-
-  const fetchReportData = async () => {
+  const fetchReportData = useCallback(async () => {
     try {
       setLoading(true)
       
@@ -110,7 +104,13 @@ export default function RaporlarPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showError])
+
+  useEffect(() => {
+    if (status === 'loading') return
+    if (!session) router.push('/auth/signin')
+    else fetchReportData()
+  }, [session, status, router, selectedPeriod, fetchReportData])
 
   const processReportData = (dashboard: any, shipments: any[], customers: any[], products: any[]): ReportData => {
     // Calculate totals

@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       // Create shipment
       const shipment = await tx.shipment.create({
         data: {
-          customerId: typeof customerId === 'string' ? parseInt(customerId) : customerId,
+          customerId: customerId,
           address: address || '',
           city: city || '',
           status: 'PENDING',

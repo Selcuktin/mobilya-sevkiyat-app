@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Package, BarChart3, ShoppingCart, Users, TrendingUp, DollarSign, FileText } from 'lucide-react'
 import Navigation from '../components/Layout/Navigation'
@@ -25,13 +25,7 @@ export default function HomePage() {
     if (!session) router.push('/auth/signin')
   }, [session, status, router])
 
-  useEffect(() => {
-    if (session) {
-      fetchDashboardData()
-    }
-  }, [session])
-
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true)
       
@@ -59,7 +53,13 @@ export default function HomePage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [showError])
+
+  useEffect(() => {
+    if (session) {
+      fetchDashboardData()
+    }
+  }, [session, fetchDashboardData])
 
   if (status === 'loading') {
     return (
