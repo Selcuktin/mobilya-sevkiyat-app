@@ -25,17 +25,6 @@ export async function GET(
       where: {
         id: params.id,
         userId: userId
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        address: true,
-        city: true,
-        createdAt: true,
-        updatedAt: true,
-        userId: true
       }
     })
 
@@ -123,17 +112,6 @@ export async function PUT(
         phone: phone || existingCustomer.phone,
         address: address !== undefined ? address : existingCustomer.address,
         city: city !== undefined ? city : existingCustomer.city
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        address: true,
-        city: true,
-        createdAt: true,
-        updatedAt: true,
-        userId: true
       }
     })
 
