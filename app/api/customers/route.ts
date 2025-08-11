@@ -18,39 +18,40 @@ export async function GET() {
       )
     }
 
-    const customers = await prisma.customer.findMany({
-      where: {
-        userId: userId
-      },
-      include: {
-        shipments: {
-          select: {
-            id: true,
-            status: true,
-            totalAmount: true,
-            createdAt: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    })
+    // Get customers with shipment data using raw SQL
+    const customers = await prisma.$queryRaw`
+      SELECT 
+        c.id,
+        c.name,
+        c.email,
+        c.phone,
+        c.address,
+        c.city,
+        c."createdAt",
+        COUNT(s.id) as "totalOrders",
+        COALESCE(SUM(s."totalAmount"), 0) as "totalSpent",
+        MAX(s."createdAt") as "lastOrderDate"
+      FROM customers c
+      LEFT JOIN shipments s ON c.id = s."customerId" AND s."userId" = ${userId}
+      WHERE c."userId" = ${userId}
+      GROUP BY c.id, c.name, c.email, c.phone, c.address, c.city, c."createdAt"
+      ORDER BY c."createdAt" DESC
+    ` as any[]
 
     // Transform data to match frontend expectations
-    const transformedCustomers = customers.map(customer => ({
+    const transformedCustomers = customers.map((customer: any) => ({
       id: customer.id,
       name: customer.name,
       email: customer.email,
       phone: customer.phone,
       address: customer.address,
       city: customer.city,
-      totalOrders: customer.shipments.length,
-      totalSpent: customer.shipments.reduce((sum, shipment) => sum + shipment.totalAmount, 0),
-      lastOrderDate: customer.shipments.length > 0 
-        ? customer.shipments[0].createdAt?.toISOString().split('T')[0] 
+      totalOrders: Number(customer.totalOrders) || 0,
+      totalSpent: Number(customer.totalSpent) || 0,
+      lastOrderDate: customer.lastOrderDate 
+        ? new Date(customer.lastOrderDate).toISOString().split('T')[0]
         : null,
-      status: customer.shipments.length > 0 ? 'Aktif' : 'Pasif'
+      status: Number(customer.totalOrders) > 0 ? 'Aktif' : 'Pasif'
     }))
 
     return NextResponse.json({
@@ -101,14 +102,13 @@ export async function POST(request: Request) {
     let finalEmail = customerEmail
 
     while (emailExists) {
-      const existingCustomer = await prisma.customer.findFirst({
-        where: { 
-          email: finalEmail,
-          userId: userId
-        }
-      })
+      const existingCustomer = await prisma.$queryRaw`
+        SELECT id FROM customers 
+        WHERE email = ${finalEmail} AND "userId" = ${userId}
+        LIMIT 1
+      ` as any[]
 
-      if (!existingCustomer) {
+      if (!existingCustomer || existingCustomer.length === 0) {
         emailExists = false
       } else {
         // If original email was provided, add counter
@@ -125,17 +125,18 @@ export async function POST(request: Request) {
       }
     }
 
-    // Create customer
-    const customer = await prisma.customer.create({
-      data: {
-        name,
-        email: finalEmail,
-        phone: phone || null,
-        address: address || null,
-        city: city || null,
-        userId: userId
-      }
-    })
+    // Create customer using raw SQL
+    const newCustomers = await prisma.$queryRaw`
+      INSERT INTO customers (id, name, email, phone, address, city, "userId", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${name}, ${finalEmail}, ${phone || null}, ${address || null}, ${city || null}, ${userId}, NOW(), NOW())
+      RETURNING id, name, email, phone, address, city
+    ` as any[]
+
+    if (!newCustomers || newCustomers.length === 0) {
+      throw new Error('Customer creation failed')
+    }
+
+    const customer = newCustomers[0]
 
     // Return formatted response
     const newCustomer = {
