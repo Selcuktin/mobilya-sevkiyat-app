@@ -21,42 +21,42 @@ export async function GET(
       )
     }
 
-    const customer = await prisma.customer.findFirst({
-      where: {
-        id: params.id,
-        userId: userId
-      }
-    })
+    // Use raw query to avoid type issues
+    const customer = await prisma.$queryRaw`
+      SELECT id, name, email, phone, address, city, "createdAt", "updatedAt"
+      FROM customers 
+      WHERE id = ${params.id} AND "userId" = ${userId}
+      LIMIT 1
+    ` as any[]
 
-    if (!customer) {
+    if (!customer || customer.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Müşteri bulunamadı' },
         { status: 404 }
       )
     }
 
+    const customerData = customer[0]
+
     // Get shipments separately
-    const shipments = await prisma.shipment.findMany({
-      where: {
-        customerId: customer.id,
-        userId: userId
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    })
+    const shipments = await prisma.$queryRaw`
+      SELECT id, "totalAmount", "createdAt"
+      FROM shipments 
+      WHERE "customerId" = ${params.id} AND "userId" = ${userId}
+      ORDER BY "createdAt" DESC
+    ` as any[]
 
     const transformedCustomer = {
-      id: customer.id,
-      name: customer.name,
-      email: customer.email,
-      phone: customer.phone,
-      address: customer.address,
-      city: customer.city,
+      id: customerData.id,
+      name: customerData.name,
+      email: customerData.email,
+      phone: customerData.phone,
+      address: customerData.address,
+      city: customerData.city,
       totalOrders: shipments.length,
-      totalSpent: shipments.reduce((sum, s) => sum + (s.totalAmount || 0), 0),
+      totalSpent: shipments.reduce((sum: number, s: any) => sum + (Number(s.totalAmount) || 0), 0),
       lastOrderDate: shipments.length > 0 
-        ? shipments[0].createdAt.toISOString().split('T')[0]
+        ? new Date(shipments[0].createdAt).toISOString().split('T')[0]
         : null
     }
 
@@ -90,52 +90,65 @@ export async function PUT(
     const { name, email, phone, address, city } = body
 
     // Check if customer exists and belongs to user
-    const existingCustomer = await prisma.customer.findFirst({
-      where: {
-        id: params.id,
-        userId: userId
-      }
-    })
+    const existingCustomer = await prisma.$queryRaw`
+      SELECT id FROM customers 
+      WHERE id = ${params.id} AND "userId" = ${userId}
+      LIMIT 1
+    ` as any[]
 
-    if (!existingCustomer) {
+    if (!existingCustomer || existingCustomer.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Müşteri bulunamadı' },
         { status: 404 }
       )
     }
 
-    // Build update data object manually to avoid type issues
-    const updateData: any = {}
-    if (name !== undefined) updateData.name = name
-    if (email !== undefined) updateData.email = email
-    if (phone !== undefined) updateData.phone = phone
-    if (address !== undefined) updateData.address = address
-    if (city !== undefined) updateData.city = city
+    // Update using raw query to avoid type issues
+    await prisma.$executeRaw`
+      UPDATE customers 
+      SET 
+        name = COALESCE(${name}, name),
+        email = COALESCE(${email}, email),
+        phone = COALESCE(${phone}, phone),
+        address = COALESCE(${address}, address),
+        city = COALESCE(${city}, city),
+        "updatedAt" = NOW()
+      WHERE id = ${params.id} AND "userId" = ${userId}
+    `
 
-    const updatedCustomer = await prisma.customer.update({
-      where: { id: params.id },
-      data: updateData
-    })
+    // Get updated customer
+    const updatedCustomer = await prisma.$queryRaw`
+      SELECT id, name, email, phone, address, city
+      FROM customers 
+      WHERE id = ${params.id} AND "userId" = ${userId}
+      LIMIT 1
+    ` as any[]
 
-    // Get shipments separately
-    const shipments = await prisma.shipment.findMany({
-      where: {
-        customerId: updatedCustomer.id,
-        userId: userId
-      }
-    })
+    if (!updatedCustomer || updatedCustomer.length === 0) {
+      throw new Error('Customer not found after update')
+    }
+
+    const customerData = updatedCustomer[0]
+
+    // Get shipments
+    const shipments = await prisma.$queryRaw`
+      SELECT id, "totalAmount", "createdAt"
+      FROM shipments 
+      WHERE "customerId" = ${params.id} AND "userId" = ${userId}
+      ORDER BY "createdAt" DESC
+    ` as any[]
 
     const transformedCustomer = {
-      id: updatedCustomer.id,
-      name: updatedCustomer.name,
-      email: updatedCustomer.email,
-      phone: updatedCustomer.phone,
-      address: updatedCustomer.address,
-      city: updatedCustomer.city,
+      id: customerData.id,
+      name: customerData.name,
+      email: customerData.email,
+      phone: customerData.phone,
+      address: customerData.address,
+      city: customerData.city,
       totalOrders: shipments.length,
-      totalSpent: shipments.reduce((sum, s) => sum + (s.totalAmount || 0), 0),
+      totalSpent: shipments.reduce((sum: number, s: any) => sum + (Number(s.totalAmount) || 0), 0),
       lastOrderDate: shipments.length > 0 
-        ? shipments[0].createdAt.toISOString().split('T')[0]
+        ? new Date(shipments[0].createdAt).toISOString().split('T')[0]
         : null
     }
     
@@ -166,14 +179,13 @@ export async function DELETE(
     }
 
     // Check if customer exists and belongs to user
-    const existingCustomer = await prisma.customer.findFirst({
-      where: {
-        id: params.id,
-        userId: userId
-      }
-    })
+    const existingCustomer = await prisma.$queryRaw`
+      SELECT id FROM customers 
+      WHERE id = ${params.id} AND "userId" = ${userId}
+      LIMIT 1
+    ` as any[]
 
-    if (!existingCustomer) {
+    if (!existingCustomer || existingCustomer.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Müşteri bulunamadı' },
         { status: 404 }
@@ -181,23 +193,26 @@ export async function DELETE(
     }
 
     // Check if customer has shipments
-    const shipmentCount = await prisma.shipment.count({
-      where: {
-        customerId: params.id,
-        userId: userId
-      }
-    })
+    const shipmentCount = await prisma.$queryRaw`
+      SELECT COUNT(*) as count
+      FROM shipments 
+      WHERE "customerId" = ${params.id} AND "userId" = ${userId}
+    ` as any[]
 
-    if (shipmentCount > 0) {
+    const count = Number(shipmentCount[0]?.count || 0)
+
+    if (count > 0) {
       return NextResponse.json(
         { success: false, error: 'Bu müşterinin sevkiyatları olduğu için silinemez' },
         { status: 400 }
       )
     }
 
-    await prisma.customer.delete({
-      where: { id: params.id }
-    })
+    // Delete customer
+    await prisma.$executeRaw`
+      DELETE FROM customers 
+      WHERE id = ${params.id} AND "userId" = ${userId}
+    `
 
     return NextResponse.json({
       success: true,
