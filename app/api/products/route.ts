@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
-import { withRateLimit, apiRateLimit } from '@/lib/rateLimit'
-import { getPaginationParams, createPaginatedResponse, buildPaginatedQuery } from '@/lib/pagination'
+import { withRateLimit } from '@/lib/rateLimit'
 import { validateProduct, sanitizeString } from '@/lib/validation'
 
 const prisma = new PrismaClient()
@@ -21,59 +20,81 @@ export const GET = withRateLimit(async (request: NextRequest) => {
       )
     }
 
-    // Get pagination parameters
+    // Get pagination parameters from URL
     const { searchParams } = new URL(request.url)
-    const paginationParams = getPaginationParams(searchParams)
+    const page = parseInt(searchParams.get('page') || '1')
+    const limit = parseInt(searchParams.get('limit') || '10')
+    const search = searchParams.get('search') || ''
+    const category = searchParams.get('category') || ''
     
-    // Build query with pagination and search
-    const query = buildPaginatedQuery(
-      paginationParams,
-      ['name', 'category', 'description'], // searchable fields
-      'createdAt'
-    )
+    const offset = (page - 1) * limit
 
-    // Add user filter
-    const where = {
-      userId: userId,
-      ...query.where
+    // Build WHERE conditions
+    let whereConditions = `p."userId" = '${userId}'`
+    
+    if (search) {
+      whereConditions += ` AND (p.name ILIKE '%${search}%' OR p.description ILIKE '%${search}%')`
+    }
+    
+    if (category) {
+      whereConditions += ` AND p.category = '${category}'`
     }
 
     // Get total count for pagination
-    const totalCount = await prisma.product.count({ where })
+    const totalCountResult = await prisma.$queryRaw`
+      SELECT COUNT(*) as count FROM products p WHERE ${prisma.$queryRawUnsafe(whereConditions)}
+    ` as any[]
+    
+    const totalCount = Number(totalCountResult[0]?.count || 0)
 
-    // Get paginated products
-    const products = await prisma.product.findMany({
-      where,
-      include: {
-        stock: true
-      },
-      orderBy: query.orderBy,
-      skip: query.skip,
-      take: query.take
-    })
+    // Get paginated products with stock
+    const products = await prisma.$queryRaw`
+      SELECT 
+        p.id,
+        p.name,
+        p.category,
+        p.price,
+        p.image,
+        p.features,
+        p.description,
+        p."createdAt",
+        s.quantity as "stockQuantity",
+        s."minQuantity" as "stockMinQuantity"
+      FROM products p
+      LEFT JOIN stock s ON p.id = s."productId"
+      WHERE ${prisma.$queryRawUnsafe(whereConditions)}
+      ORDER BY p."createdAt" DESC
+      LIMIT ${limit} OFFSET ${offset}
+    ` as any[]
 
     // Transform data to match frontend expectations
-    const transformedProducts = products.map(product => ({
+    const transformedProducts = products.map((product: any) => ({
       id: product.id,
       name: product.name,
       category: product.category,
-      price: product.price,
-      stock: product.stock?.quantity || 0,
-      status: getStockStatus(product.stock?.quantity || 0, product.stock?.minQuantity || 0),
+      price: Number(product.price),
+      stock: Number(product.stockQuantity) || 0,
+      status: getStockStatus(Number(product.stockQuantity) || 0, Number(product.stockMinQuantity) || 0),
       features: product.features || [],
       description: product.description
     }))
 
     // Create paginated response
-    const paginatedResponse = createPaginatedResponse(
-      transformedProducts,
-      totalCount,
-      paginationParams
-    )
+    const totalPages = Math.ceil(totalCount / limit)
+    const hasNext = page < totalPages
+    const hasPrev = page > 1
 
     return NextResponse.json({
       success: true,
-      ...paginatedResponse
+      data: transformedProducts,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasNext,
+        hasPrev
+      }
     })
   } catch (error) {
     console.error('Products GET error:', error)
@@ -123,49 +144,92 @@ export const POST = withRateLimit(async (request: NextRequest) => {
       )
     }
 
-    // Create product with stock in a transaction
-    const result = await prisma.$transaction(async (tx) => {
+    // Create product with stock using raw SQL transaction
+    const productId = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    
+    try {
+      // Start transaction
+      await prisma.$executeRaw`BEGIN`
+
       // Create product
-      const product = await tx.product.create({
-        data: {
-          name: sanitizedData.name,
-          category: sanitizedData.category,
-          price: parseFloat(sanitizedData.price),
-          description: sanitizedData.description || null,
-          features: sanitizedData.features.filter((f: string) => f.trim()),
-          userId: userId
-        }
-      })
+      await prisma.$executeRaw`
+        INSERT INTO products (id, name, category, price, description, features, "userId", "createdAt", "updatedAt")
+        VALUES (
+          ${productId},
+          ${sanitizedData.name},
+          ${sanitizedData.category},
+          ${Number(sanitizedData.price)},
+          ${sanitizedData.description || null},
+          ${JSON.stringify(sanitizedData.features.filter((f: string) => f.trim()))},
+          ${userId},
+          NOW(),
+          NOW()
+        )
+      `
 
       // Create initial stock record
-      const stock = await tx.stock.create({
-        data: {
-          productId: product.id,
-          quantity: Number(sanitizedData.initialStock) || 0,
-          minQuantity: Number(sanitizedData.minStock) || 0,
-          maxQuantity: (Number(sanitizedData.minStock) || 0) * 5 // Default max is 5x min
-        }
+      await prisma.$executeRaw`
+        INSERT INTO stock (id, "productId", quantity, "minQuantity", "maxQuantity", "createdAt", "updatedAt")
+        VALUES (
+          gen_random_uuid(),
+          ${productId},
+          ${Number(sanitizedData.initialStock)},
+          ${Number(sanitizedData.minStock)},
+          ${Number(sanitizedData.minStock) * 5},
+          NOW(),
+          NOW()
+        )
+      `
+
+      // Commit transaction
+      await prisma.$executeRaw`COMMIT`
+
+      // Get created product with stock
+      const createdProductResult = await prisma.$queryRaw`
+        SELECT 
+          p.id,
+          p.name,
+          p.category,
+          p.price,
+          p.features,
+          p.description,
+          s.quantity as "stockQuantity",
+          s."minQuantity" as "stockMinQuantity"
+        FROM products p
+        LEFT JOIN stock s ON p.id = s."productId"
+        WHERE p.id = ${productId}
+        LIMIT 1
+      ` as any[]
+
+      if (!createdProductResult || createdProductResult.length === 0) {
+        throw new Error('Product creation failed')
+      }
+
+      const productData = createdProductResult[0]
+
+      // Return formatted response
+      const newProduct = {
+        id: productData.id,
+        name: productData.name,
+        category: productData.category,
+        price: Number(productData.price),
+        stock: Number(productData.stockQuantity) || 0,
+        status: getStockStatus(Number(productData.stockQuantity) || 0, Number(productData.stockMinQuantity) || 0),
+        features: productData.features || [],
+        description: productData.description
+      }
+      
+      return NextResponse.json({
+        success: true,
+        data: newProduct
       })
 
-      return { product, stock }
-    })
-
-    // Return formatted response
-    const newProduct = {
-      id: result.product.id,
-      name: result.product.name,
-      category: result.product.category,
-      price: result.product.price,
-      stock: result.stock.quantity,
-      status: getStockStatus(result.stock.quantity, result.stock.minQuantity),
-      features: result.product.features,
-      description: result.product.description
+    } catch (transactionError) {
+      // Rollback on error
+      await prisma.$executeRaw`ROLLBACK`
+      throw transactionError
     }
-    
-    return NextResponse.json({
-      success: true,
-      data: newProduct
-    })
+
   } catch (error) {
     console.error('Product POST error:', error)
     return NextResponse.json(
