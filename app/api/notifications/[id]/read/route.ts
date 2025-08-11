@@ -3,6 +3,7 @@ import { getCurrentUserId } from '@/lib/auth'
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 // Mock notification storage (in production, use database)
 const notifications = new Map<string, any[]>()

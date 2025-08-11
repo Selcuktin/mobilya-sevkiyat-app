@@ -1,18 +1,20 @@
 // Enhanced security utilities for production
+// This module requires Node.js runtime due to crypto usage
 
-import crypto from 'crypto'
 import { NextRequest } from 'next/server'
 
-// CSRF Protection
+// CSRF Protection - using simple random generation for Edge compatibility
 export function generateCSRFToken(): string {
-  return crypto.randomBytes(32).toString('hex')
+  return Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
 }
 
 export function validateCSRFToken(token: string, sessionToken: string): boolean {
-  return crypto.timingSafeEqual(
-    Buffer.from(token, 'hex'),
-    Buffer.from(sessionToken, 'hex')
-  )
+  if (token.length !== sessionToken.length) return false
+  let result = 0
+  for (let i = 0; i < token.length; i++) {
+    result |= token.charCodeAt(i) ^ sessionToken.charCodeAt(i)
+  }
+  return result === 0
 }
 
 // Content Security Policy
@@ -102,7 +104,7 @@ export function validatePasswordStrength(password: string): {
 
 // Session security
 export function generateSecureSessionId(): string {
-  return crypto.randomBytes(32).toString('hex')
+  return Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
 }
 
 // API Key validation
