@@ -21,48 +21,69 @@ export async function GET(
       )
     }
 
-    const shipment = await prisma.shipment.findFirst({
-      where: {
-        id: params.id,
-        userId: userId
-      },
-      include: {
-        customer: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
-      }
-    })
+    // Get shipment with customer and items using raw SQL
+    const shipmentResult = await prisma.$queryRaw`
+      SELECT 
+        s.id,
+        s.address,
+        s.city,
+        s.status,
+        s."totalAmount",
+        s."deliveryDate",
+        s."createdAt",
+        c.name as "customerName",
+        c.email as "customerEmail",
+        c.phone as "customerPhone"
+      FROM shipments s
+      INNER JOIN customers c ON s."customerId" = c.id
+      WHERE s.id = ${params.id} AND s."userId" = ${userId}
+      LIMIT 1
+    ` as any[]
 
-    if (!shipment) {
+    if (!shipmentResult || shipmentResult.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Sevkiyat bulunamadı' },
         { status: 404 }
       )
     }
 
+    const shipmentData = shipmentResult[0]
+
+    // Get shipment items separately
+    const itemsResult = await prisma.$queryRaw`
+      SELECT 
+        si.id,
+        si.quantity,
+        si."unitPrice",
+        p.name as "productName"
+      FROM shipment_items si
+      INNER JOIN products p ON si."productId" = p.id
+      WHERE si."shipmentId" = ${params.id}
+      ORDER BY si.id
+    ` as any[]
+
     const transformedShipment = {
-      id: shipment.id,
-      orderNumber: `SHP-${shipment.id.toString().padStart(4, '0')}`,
-      customerName: shipment.customer.name,
-      customerEmail: shipment.customer.email,
-      customerPhone: shipment.customer.phone,
-      address: shipment.address,
-      city: shipment.city,
-      status: shipment.status,
-      totalAmount: shipment.totalAmount,
-      itemCount: shipment.items.length,
-      items: shipment.items.map((item: any) => ({
+      id: shipmentData.id,
+      orderNumber: `SHP-${shipmentData.id.toString().padStart(4, '0')}`,
+      customerName: shipmentData.customerName,
+      customerEmail: shipmentData.customerEmail,
+      customerPhone: shipmentData.customerPhone,
+      address: shipmentData.address,
+      city: shipmentData.city,
+      status: shipmentData.status,
+      totalAmount: Number(shipmentData.totalAmount) || 0,
+      itemCount: itemsResult.length,
+      items: itemsResult.map((item: any) => ({
         id: item.id,
-        productName: item.product.name,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.quantity * item.unitPrice
+        productName: item.productName,
+        quantity: Number(item.quantity) || 0,
+        unitPrice: Number(item.unitPrice) || 0,
+        totalPrice: (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)
       })),
-      createdAt: shipment.createdAt.toISOString().split('T')[0],
-      deliveryDate: shipment.deliveryDate?.toISOString().split('T')[0] || null
+      createdAt: new Date(shipmentData.createdAt).toISOString().split('T')[0],
+      deliveryDate: shipmentData.deliveryDate 
+        ? new Date(shipmentData.deliveryDate).toISOString().split('T')[0] 
+        : null
     }
 
     return NextResponse.json({
@@ -94,32 +115,63 @@ export async function PUT(
     const body = await request.json()
     const { status, address, city, deliveryDate } = body
 
-    const updatedShipment = await prisma.shipment.update({
-      where: { id: params.id },
-      data: {
-        status: status || 'PENDING',
-        address: address || '',
-        city: city || '',
-        deliveryDate: deliveryDate ? new Date(deliveryDate) : null
-      },
-      include: {
-        customer: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
-      }
-    })
+    // Check if shipment exists and belongs to user
+    const existingShipment = await prisma.$queryRaw`
+      SELECT id FROM shipments 
+      WHERE id = ${params.id} AND "userId" = ${userId}
+      LIMIT 1
+    ` as any[]
+
+    if (!existingShipment || existingShipment.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Sevkiyat bulunamadı' },
+        { status: 404 }
+      )
+    }
+
+    // Update shipment using raw SQL
+    await prisma.$executeRaw`
+      UPDATE shipments 
+      SET 
+        status = COALESCE(${status}, status),
+        address = COALESCE(${address}, address),
+        city = COALESCE(${city}, city),
+        "deliveryDate" = COALESCE(${deliveryDate ? new Date(deliveryDate) : null}, "deliveryDate"),
+        "updatedAt" = NOW()
+      WHERE id = ${params.id} AND "userId" = ${userId}
+    `
+
+    // Get updated shipment with customer data
+    const updatedShipmentResult = await prisma.$queryRaw`
+      SELECT 
+        s.id,
+        s.status,
+        s."totalAmount",
+        s."createdAt",
+        s."deliveryDate",
+        c.name as "customerName"
+      FROM shipments s
+      INNER JOIN customers c ON s."customerId" = c.id
+      WHERE s.id = ${params.id} AND s."userId" = ${userId}
+      LIMIT 1
+    ` as any[]
+
+    if (!updatedShipmentResult || updatedShipmentResult.length === 0) {
+      throw new Error('Shipment not found after update')
+    }
+
+    const updatedData = updatedShipmentResult[0]
 
     const transformedShipment = {
-      id: updatedShipment.id,
-      orderNumber: `SHP-${updatedShipment.id.toString().padStart(4, '0')}`,
-      customerName: updatedShipment.customer.name,
-      status: updatedShipment.status,
-      totalAmount: updatedShipment.totalAmount,
-      createdAt: updatedShipment.createdAt.toISOString().split('T')[0],
-      deliveryDate: updatedShipment.deliveryDate?.toISOString().split('T')[0] || null
+      id: updatedData.id,
+      orderNumber: `SHP-${updatedData.id.toString().padStart(4, '0')}`,
+      customerName: updatedData.customerName,
+      status: updatedData.status,
+      totalAmount: Number(updatedData.totalAmount) || 0,
+      createdAt: new Date(updatedData.createdAt).toISOString().split('T')[0],
+      deliveryDate: updatedData.deliveryDate 
+        ? new Date(updatedData.deliveryDate).toISOString().split('T')[0] 
+        : null
     }
 
     return NextResponse.json({
@@ -148,9 +200,30 @@ export async function DELETE(
       )
     }
 
-    await prisma.shipment.delete({
-      where: { id: params.id }
-    })
+    // Check if shipment exists and belongs to user
+    const existingShipment = await prisma.$queryRaw`
+      SELECT id FROM shipments 
+      WHERE id = ${params.id} AND "userId" = ${userId}
+      LIMIT 1
+    ` as any[]
+
+    if (!existingShipment || existingShipment.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Sevkiyat bulunamadı' },
+        { status: 404 }
+      )
+    }
+
+    // Delete shipment items first
+    await prisma.$executeRaw`
+      DELETE FROM shipment_items WHERE "shipmentId" = ${params.id}
+    `
+
+    // Delete shipment
+    await prisma.$executeRaw`
+      DELETE FROM shipments 
+      WHERE id = ${params.id} AND "userId" = ${userId}
+    `
 
     return NextResponse.json({
       success: true,

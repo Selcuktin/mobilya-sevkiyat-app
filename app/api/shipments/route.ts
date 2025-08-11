@@ -18,44 +18,45 @@ export async function GET() {
       )
     }
 
-    const shipments = await prisma.shipment.findMany({
-      where: {
-        userId: userId
-      },
-      include: {
-        customer: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      }
-    })
+    // Get shipments with customer and items data using raw SQL
+    const shipments = await prisma.$queryRaw`
+      SELECT 
+        s.id,
+        s.address,
+        s.city,
+        s.status,
+        s."totalAmount",
+        s."deliveryDate",
+        s."createdAt",
+        c.name as "customerName",
+        c.email as "customerEmail",
+        c.phone as "customerPhone",
+        (
+          SELECT COUNT(*) FROM shipment_items si WHERE si."shipmentId" = s.id
+        ) as "itemCount"
+      FROM shipments s
+      INNER JOIN customers c ON s."customerId" = c.id
+      WHERE s."userId" = ${userId}
+      ORDER BY s."createdAt" DESC
+    ` as any[]
 
     // Transform data to match frontend expectations
-    const transformedShipments = shipments.map(shipment => ({
+    const transformedShipments = shipments.map((shipment: any) => ({
       id: shipment.id,
       orderNumber: `SHP-${shipment.id.toString().padStart(4, '0')}`,
-      customerName: shipment.customer.name,
-      customerEmail: shipment.customer.email,
-      customerPhone: shipment.customer.phone,
+      customerName: shipment.customerName,
+      customerEmail: shipment.customerEmail,
+      customerPhone: shipment.customerPhone,
       address: shipment.address,
       city: shipment.city,
       status: shipment.status,
-      totalAmount: shipment.totalAmount,
-      itemCount: shipment.items.length,
-      items: shipment.items.map(item => ({
-        id: item.id,
-        productName: item.product.name,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.quantity * item.unitPrice
-      })),
-      createdAt: shipment.createdAt.toISOString().split('T')[0],
-      deliveryDate: shipment.deliveryDate?.toISOString().split('T')[0] || null
+      totalAmount: Number(shipment.totalAmount) || 0,
+      itemCount: Number(shipment.itemCount) || 0,
+      items: [], // Items will be loaded separately if needed
+      createdAt: new Date(shipment.createdAt).toISOString().split('T')[0],
+      deliveryDate: shipment.deliveryDate 
+        ? new Date(shipment.deliveryDate).toISOString().split('T')[0] 
+        : null
     }))
 
     return NextResponse.json({
@@ -96,114 +97,135 @@ export async function POST(request: Request) {
     let totalAmount = 0
     if (items && items.length > 0) {
       for (const item of items) {
-        const product = await prisma.product.findUnique({
-          where: { id: item.productId }
-        })
-        if (product) {
-          totalAmount += item.quantity * product.price
+        const productResult = await prisma.$queryRaw`
+          SELECT price FROM products WHERE id = ${item.productId} LIMIT 1
+        ` as any[]
+        
+        if (productResult && productResult.length > 0) {
+          totalAmount += item.quantity * Number(productResult[0].price)
         }
       }
     }
 
-    // Create shipment with items in a transaction
-    const result = await prisma.$transaction(async (tx) => {
+    // Generate shipment ID
+    const shipmentId = `ship_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
+    try {
+      // Start transaction
+      await prisma.$executeRaw`BEGIN`
+
       // Create shipment
-      const shipment = await tx.shipment.create({
-        data: {
-          customerId: customerId,
-          address: address || '',
-          city: city || '',
-          status: 'PENDING',
-          totalAmount,
-          deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
-          userId: userId
-        }
-      })
+      await prisma.$executeRaw`
+        INSERT INTO shipments (id, "customerId", address, city, status, "totalAmount", "deliveryDate", "userId", "createdAt", "updatedAt")
+        VALUES (
+          ${shipmentId},
+          ${customerId},
+          ${address || ''},
+          ${city || ''},
+          'PENDING',
+          ${totalAmount},
+          ${deliveryDate ? new Date(deliveryDate) : null},
+          ${userId},
+          NOW(),
+          NOW()
+        )
+      `
 
       // Create shipment items and update stock (only if items exist)
       if (items && items.length > 0) {
         for (const item of items) {
-          const product = await tx.product.findUnique({
-            where: { id: item.productId }
-          })
+          const productResult = await prisma.$queryRaw`
+            SELECT price FROM products WHERE id = ${item.productId} LIMIT 1
+          ` as any[]
 
-          if (!product) {
+          if (!productResult || productResult.length === 0) {
             throw new Error(`Ürün bulunamadı: ${item.productId}`)
           }
 
+          const productPrice = Number(productResult[0].price)
+
           // Create shipment item
-          await tx.shipmentItem.create({
-            data: {
-              shipmentId: shipment.id,
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: product.price
-            }
-          })
+          await prisma.$executeRaw`
+            INSERT INTO shipment_items (id, "shipmentId", "productId", quantity, "unitPrice")
+            VALUES (
+              gen_random_uuid(),
+              ${shipmentId},
+              ${item.productId},
+              ${item.quantity},
+              ${productPrice}
+            )
+          `
 
           // Update stock
-          const stock = await tx.stock.findFirst({
-            where: { productId: item.productId }
-          })
-
-          if (stock) {
-            await tx.stock.update({
-              where: { id: stock.id },
-              data: {
-                quantity: Math.max(0, stock.quantity - item.quantity)
-              }
-            })
-          }
+          await prisma.$executeRaw`
+            UPDATE stock 
+            SET quantity = GREATEST(0, quantity - ${item.quantity})
+            WHERE "productId" = ${item.productId}
+          `
         }
       }
 
-      return shipment
-    })
+      // Commit transaction
+      await prisma.$executeRaw`COMMIT`
 
-    // Get the created shipment with relations
-    const createdShipment = await prisma.shipment.findUnique({
-      where: { id: result.id },
-      include: {
-        customer: true,
-        items: {
-          include: {
-            product: true
-          }
-        }
+      // Get the created shipment with customer data
+      const createdShipmentResult = await prisma.$queryRaw`
+        SELECT 
+          s.id,
+          s.address,
+          s.city,
+          s.status,
+          s."totalAmount",
+          s."deliveryDate",
+          s."createdAt",
+          c.name as "customerName",
+          c.email as "customerEmail",
+          c.phone as "customerPhone",
+          (
+            SELECT COUNT(*) FROM shipment_items si WHERE si."shipmentId" = s.id
+          ) as "itemCount"
+        FROM shipments s
+        INNER JOIN customers c ON s."customerId" = c.id
+        WHERE s.id = ${shipmentId}
+        LIMIT 1
+      ` as any[]
+
+      if (!createdShipmentResult || createdShipmentResult.length === 0) {
+        throw new Error('Sevkiyat oluşturulamadı')
       }
-    })
 
-    if (!createdShipment) {
-      throw new Error('Sevkiyat oluşturulamadı')
+      const shipmentData = createdShipmentResult[0]
+
+      // Return formatted response
+      const newShipment = {
+        id: shipmentData.id,
+        orderNumber: `SHP-${shipmentData.id.toString().padStart(4, '0')}`,
+        customerName: shipmentData.customerName,
+        customerEmail: shipmentData.customerEmail,
+        customerPhone: shipmentData.customerPhone,
+        address: shipmentData.address,
+        city: shipmentData.city,
+        status: shipmentData.status,
+        totalAmount: Number(shipmentData.totalAmount) || 0,
+        itemCount: Number(shipmentData.itemCount) || 0,
+        items: [], // Items can be loaded separately if needed
+        createdAt: new Date(shipmentData.createdAt).toISOString().split('T')[0],
+        deliveryDate: shipmentData.deliveryDate 
+          ? new Date(shipmentData.deliveryDate).toISOString().split('T')[0] 
+          : null
+      }
+      
+      return NextResponse.json({
+        success: true,
+        data: newShipment
+      })
+
+    } catch (transactionError) {
+      // Rollback on error
+      await prisma.$executeRaw`ROLLBACK`
+      throw transactionError
     }
 
-    // Return formatted response
-    const newShipment = {
-      id: createdShipment.id,
-      orderNumber: `SHP-${createdShipment.id.toString().padStart(4, '0')}`,
-      customerName: createdShipment.customer.name,
-      customerEmail: createdShipment.customer.email,
-      customerPhone: createdShipment.customer.phone,
-      address: createdShipment.address,
-      city: createdShipment.city,
-      status: createdShipment.status,
-      totalAmount: createdShipment.totalAmount,
-      itemCount: createdShipment.items.length,
-      items: createdShipment.items.map(item => ({
-        id: item.id,
-        productName: item.product.name,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.quantity * item.unitPrice
-      })),
-      createdAt: createdShipment.createdAt.toISOString().split('T')[0],
-      deliveryDate: createdShipment.deliveryDate?.toISOString().split('T')[0] || null
-    }
-    
-    return NextResponse.json({
-      success: true,
-      data: newShipment
-    })
   } catch (error) {
     console.error('Shipment POST error:', error)
     return NextResponse.json(
