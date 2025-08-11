@@ -18,90 +18,80 @@ export async function GET() {
       )
     }
 
-    // Get all statistics in parallel for current user
-    const [
-      totalCustomers,
-      totalProducts,
-      totalShipments,
-      pendingShipments,
-      completedShipments,
-      lowStockProducts,
-      totalRevenue,
-      recentShipments
-    ] = await Promise.all([
+    // Get all statistics using raw SQL queries
+    const results = await Promise.all([
       // Total customers
-      prisma.customer.count({
-        where: { userId: userId }
-      }),
+      prisma.$queryRaw`
+        SELECT COUNT(*) as count FROM customers WHERE "userId" = ${userId}
+      `,
       
       // Total products
-      prisma.product.count({
-        where: { userId: userId }
-      }),
+      prisma.$queryRaw`
+        SELECT COUNT(*) as count FROM products WHERE "userId" = ${userId}
+      `,
       
       // Total shipments
-      prisma.shipment.count({
-        where: { userId: userId }
-      }),
+      prisma.$queryRaw`
+        SELECT COUNT(*) as count FROM shipments WHERE "userId" = ${userId}
+      `,
       
       // Pending shipments
-      prisma.shipment.count({
-        where: { 
-          userId: userId,
-          status: 'PENDING' 
-        }
-      }),
+      prisma.$queryRaw`
+        SELECT COUNT(*) as count FROM shipments 
+        WHERE "userId" = ${userId} AND status = 'PENDING'
+      `,
       
       // Completed shipments
-      prisma.shipment.count({
-        where: { 
-          userId: userId,
-          status: 'DELIVERED' 
-        }
-      }),
+      prisma.$queryRaw`
+        SELECT COUNT(*) as count FROM shipments 
+        WHERE "userId" = ${userId} AND status = 'DELIVERED'
+      `,
       
       // Low stock products
-      prisma.stock.count({
-        where: {
-          product: {
-            userId: userId
-          },
-          quantity: {
-            lte: 5 // minQuantity comparison
-          }
-        }
-      }),
+      prisma.$queryRaw`
+        SELECT COUNT(*) as count FROM stock s
+        INNER JOIN products p ON s."productId" = p.id
+        WHERE p."userId" = ${userId} AND s.quantity <= 5
+      `,
       
       // Total revenue
-      prisma.shipment.aggregate({
-        _sum: {
-          totalAmount: true
-        },
-        where: {
-          userId: userId,
-          status: 'DELIVERED'
-        }
-      }),
+      prisma.$queryRaw`
+        SELECT COALESCE(SUM("totalAmount"), 0) as total FROM shipments 
+        WHERE "userId" = ${userId} AND status = 'DELIVERED'
+      `,
       
       // Recent shipments for chart data
-      prisma.shipment.findMany({
-        where: {
-          userId: userId
-        },
-        take: 30,
-        orderBy: {
-          createdAt: 'desc'
-        },
-        select: {
-          createdAt: true,
-          totalAmount: true,
-          status: true
-        }
-      })
+      prisma.$queryRaw`
+        SELECT "createdAt", "totalAmount", status FROM shipments 
+        WHERE "userId" = ${userId}
+        ORDER BY "createdAt" DESC
+        LIMIT 30
+      `
     ])
 
+    // Type assert the results
+    const [
+      totalCustomersResult,
+      totalProductsResult,
+      totalShipmentsResult,
+      pendingShipmentsResult,
+      completedShipmentsResult,
+      lowStockProductsResult,
+      totalRevenueResult,
+      recentShipmentsResult
+    ] = results as any[]
+
+    // Extract values from query results
+    const totalCustomers = Number(totalCustomersResult[0]?.count || 0)
+    const totalProducts = Number(totalProductsResult[0]?.count || 0)
+    const totalShipments = Number(totalShipmentsResult[0]?.count || 0)
+    const pendingShipments = Number(pendingShipmentsResult[0]?.count || 0)
+    const completedShipments = Number(completedShipmentsResult[0]?.count || 0)
+    const lowStockProducts = Number(lowStockProductsResult[0]?.count || 0)
+    const totalRevenue = Number(totalRevenueResult[0]?.total || 0)
+
     // Process chart data - group by date
-    const chartData = processChartData(recentShipments)
+    const chartData = processChartData(recentShipmentsResult)
     
     // Calculate growth percentages (mock for now)
     const stats = {
@@ -130,8 +120,8 @@ export async function GET() {
         growth: 0
       },
       totalRevenue: {
-        value: totalRevenue._sum.totalAmount || 0,
-        growth: calculateGrowth(totalRevenue._sum.totalAmount || 0, 'revenue')
+        value: totalRevenue,
+        growth: calculateGrowth(totalRevenue, 'revenue')
       },
       chartData
     }
@@ -159,14 +149,15 @@ function processChartData(shipments: any[]) {
     date.setDate(date.getDate() - i)
     const dateStr = date.toISOString().split('T')[0]
     
-    const dayShipments = shipments.filter(s => 
-      s.createdAt.toISOString().split('T')[0] === dateStr
-    )
+    const dayShipments = shipments.filter((s: any) => {
+      const shipmentDate = new Date(s.createdAt).toISOString().split('T')[0]
+      return shipmentDate === dateStr
+    })
     
     last7Days.push({
       date: dateStr,
       shipments: dayShipments.length,
-      revenue: dayShipments.reduce((sum, s) => sum + (s.totalAmount || 0), 0)
+      revenue: dayShipments.reduce((sum: number, s: any) => sum + (Number(s.totalAmount) || 0), 0)
     })
   }
   
@@ -175,7 +166,7 @@ function processChartData(shipments: any[]) {
 
 function calculateGrowth(currentValue: number, type: string): number {
   // Mock growth calculation - in real app, compare with previous period
-  const growthRates = {
+  const growthRates: { [key: string]: number } = {
     customers: 12.5,
     products: 8.3,
     shipments: 15.7,
@@ -183,5 +174,5 @@ function calculateGrowth(currentValue: number, type: string): number {
     revenue: 22.1
   }
   
-  return growthRates[type as keyof typeof growthRates] || 0
+  return growthRates[type] || 0
 }
