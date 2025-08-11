@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { PrismaClient, Prisma } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
 const prisma = new PrismaClient()
@@ -110,15 +110,16 @@ export async function PUT(
       )
     }
 
+    const dataToUpdate: Prisma.CustomerUpdateInput = {}
+    if (name) dataToUpdate.name = name
+    if (email) dataToUpdate.email = email
+    if (phone) dataToUpdate.phone = phone
+    if (address !== undefined) dataToUpdate.address = address
+    if (city !== undefined) dataToUpdate.city = city
+
     const updatedCustomer = await prisma.customer.update({
       where: { id: params.id },
-      data: {
-        name: name || existingCustomer.name,
-        email: email || existingCustomer.email,
-        phone: phone || existingCustomer.phone,
-        address: address !== undefined ? address : existingCustomer.address,
-        city: city !== undefined ? city : existingCustomer.city
-      }
+      data: dataToUpdate,
     })
 
     // Get shipments separately
