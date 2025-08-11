@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUserId } from '@/lib/auth'
 import { withRateLimit } from '@/lib/rateLimit'
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 // Mock notification storage (in production, use database)
 const notifications = new Map<string, any[]>()
 

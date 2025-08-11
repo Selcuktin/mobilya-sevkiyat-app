@@ -4,8 +4,11 @@ import { getCurrentUserId } from '@/lib/auth'
 
 const prisma = new PrismaClient()
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic'
+
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -21,13 +24,6 @@ export async function GET(
       where: {
         id: params.id,
         userId: userId
-      },
-      include: {
-        shipments: {
-          orderBy: {
-            createdAt: 'desc'
-          }
-        }
       }
     })
 
@@ -38,17 +34,28 @@ export async function GET(
       )
     }
 
+    // Get shipments separately to avoid type issues
+    const shipments = await prisma.shipment.findMany({
+      where: {
+        customerId: customer.id,
+        userId: userId
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    })
+
     const transformedCustomer = {
       id: customer.id,
       name: customer.name,
-      email: customer.email || '',
-      phone: customer.phone || '',
-      address: customer.address || '',
-      city: customer.city || '',
-      totalOrders: customer.shipments?.length || 0,
-      totalSpent: customer.shipments?.reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0) || 0,
-      lastOrderDate: customer.shipments && customer.shipments.length > 0 
-        ? customer.shipments[0].createdAt.toISOString()
+      email: customer.email,
+      phone: customer.phone,
+      address: customer.address,
+      city: customer.city,
+      totalOrders: shipments.length,
+      totalSpent: shipments.reduce((sum, s) => sum + s.totalAmount, 0),
+      lastOrderDate: shipments.length > 0 
+        ? shipments[0].createdAt.toISOString()
         : null
     }
 
@@ -81,31 +88,51 @@ export async function PUT(
     const body = await request.json()
     const { name, email, phone, address, city } = body
 
+    // Check if customer exists and belongs to user
+    const existingCustomer = await prisma.customer.findFirst({
+      where: {
+        id: params.id,
+        userId: userId
+      }
+    })
+
+    if (!existingCustomer) {
+      return NextResponse.json(
+        { success: false, error: 'Müşteri bulunamadı' },
+        { status: 404 }
+      )
+    }
+
     const updatedCustomer = await prisma.customer.update({
       where: { id: params.id },
       data: {
-        name: name || '',
-        email: email || '',
-        phone: phone || '',
-        address: address || null,
-        city: city || null
-      },
-      include: {
-        shipments: true
+        name: name || existingCustomer.name,
+        email: email || existingCustomer.email,
+        phone: phone || existingCustomer.phone,
+        address: address !== undefined ? address : existingCustomer.address,
+        city: city !== undefined ? city : existingCustomer.city
+      }
+    })
+
+    // Get shipments separately
+    const shipments = await prisma.shipment.findMany({
+      where: {
+        customerId: updatedCustomer.id,
+        userId: userId
       }
     })
 
     const transformedCustomer = {
       id: updatedCustomer.id,
       name: updatedCustomer.name,
-      email: updatedCustomer.email || '',
-      phone: updatedCustomer.phone || '',
-      address: updatedCustomer.address || '',
-      city: updatedCustomer.city || '',
-      totalOrders: updatedCustomer.shipments?.length || 0,
-      totalSpent: updatedCustomer.shipments?.reduce((sum: number, s: any) => sum + (s.totalAmount || 0), 0) || 0,
-      lastOrderDate: updatedCustomer.shipments && updatedCustomer.shipments.length > 0 
-        ? updatedCustomer.shipments[0].createdAt.toISOString()
+      email: updatedCustomer.email,
+      phone: updatedCustomer.phone,
+      address: updatedCustomer.address,
+      city: updatedCustomer.city,
+      totalOrders: shipments.length,
+      totalSpent: shipments.reduce((sum, s) => sum + s.totalAmount, 0),
+      lastOrderDate: shipments.length > 0 
+        ? shipments[0].createdAt.toISOString()
         : null
     }
     
@@ -123,7 +150,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -132,6 +159,36 @@ export async function DELETE(
       return NextResponse.json(
         { success: false, error: 'Unauthorized' },
         { status: 401 }
+      )
+    }
+
+    // Check if customer exists and belongs to user
+    const existingCustomer = await prisma.customer.findFirst({
+      where: {
+        id: params.id,
+        userId: userId
+      }
+    })
+
+    if (!existingCustomer) {
+      return NextResponse.json(
+        { success: false, error: 'Müşteri bulunamadı' },
+        { status: 404 }
+      )
+    }
+
+    // Check if customer has shipments
+    const shipmentCount = await prisma.shipment.count({
+      where: {
+        customerId: params.id,
+        userId: userId
+      }
+    })
+
+    if (shipmentCount > 0) {
+      return NextResponse.json(
+        { success: false, error: 'Bu müşterinin sevkiyatları olduğu için silinemez' },
+        { status: 400 }
       )
     }
 

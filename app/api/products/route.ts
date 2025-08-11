@@ -7,6 +7,10 @@ import { validateProduct, sanitizeString } from '@/lib/validation'
 
 const prisma = new PrismaClient()
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export const GET = withRateLimit(async (request: NextRequest) => {
   try {
     const userId = await getCurrentUserId()
