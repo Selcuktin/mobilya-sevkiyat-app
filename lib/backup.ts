@@ -1,9 +1,23 @@
 // Database backup and recovery utilities
 
-import { PrismaClient } from '@prisma/client'
 import { logger } from './monitoring'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 interface BackupConfig {
   schedule: string // cron format
@@ -100,35 +114,36 @@ export class BackupManager {
   }
 
   private async getAllTables(): Promise<string[]> {
-    // Get all table names from Prisma schema
+    // Get all table names from database schema
     const tables = [
-      'User',
-      'Customer',
-      'Product',
-      'Stock',
-      'Shipment',
-      'ShipmentItem',
-      'Notification'
+      'users',
+      'customers',
+      'products',
+      'stock',
+      'shipments',
+      'shipment_items'
     ]
     return tables
   }
 
   private async exportTable(tableName: string): Promise<any[]> {
     try {
-      // Use Prisma to export data
+      const prismaClient = await getPrismaClient()
+      
+      // Use raw SQL to export data to avoid type issues
       switch (tableName.toLowerCase()) {
-        case 'user':
-          return await prisma.user.findMany()
-        case 'customer':
-          return await prisma.customer.findMany()
-        case 'product':
-          return await prisma.product.findMany()
+        case 'users':
+          return await prismaClient.$queryRaw`SELECT * FROM users` as any[]
+        case 'customers':
+          return await prismaClient.$queryRaw`SELECT * FROM customers` as any[]
+        case 'products':
+          return await prismaClient.$queryRaw`SELECT * FROM products` as any[]
         case 'stock':
-          return await prisma.stock.findMany()
-        case 'shipment':
-          return await prisma.shipment.findMany()
-        case 'shipmentitem':
-          return await prisma.shipmentItem.findMany()
+          return await prismaClient.$queryRaw`SELECT * FROM stock` as any[]
+        case 'shipments':
+          return await prismaClient.$queryRaw`SELECT * FROM shipments` as any[]
+        case 'shipment_items':
+          return await prismaClient.$queryRaw`SELECT * FROM shipment_items` as any[]
         default:
           logger.warn(`Unknown table: ${tableName}`)
           return []
@@ -140,47 +155,73 @@ export class BackupManager {
   }
 
   private async restoreData(data: Record<string, any[]>): Promise<void> {
-    // Start transaction
-    await prisma.$transaction(async (tx) => {
+    const prismaClient = await getPrismaClient()
+    
+    try {
+      // Start transaction
+      await prismaClient.$executeRaw`BEGIN`
+
       // Clear existing data (be careful!)
-      await tx.shipmentItem.deleteMany()
-      await tx.shipment.deleteMany()
-      await tx.stock.deleteMany()
-      await tx.product.deleteMany()
-      await tx.customer.deleteMany()
+      await prismaClient.$executeRaw`DELETE FROM shipment_items`
+      await prismaClient.$executeRaw`DELETE FROM shipments`
+      await prismaClient.$executeRaw`DELETE FROM stock`
+      await prismaClient.$executeRaw`DELETE FROM products`
+      await prismaClient.$executeRaw`DELETE FROM customers`
       // Don't delete users in production!
 
       // Restore data in correct order (respecting foreign keys)
-      if (data.customer) {
-        for (const item of data.customer) {
-          await tx.customer.create({ data: item })
+      if (data.customers) {
+        for (const item of data.customers) {
+          await prismaClient.$executeRaw`
+            INSERT INTO customers (id, name, email, phone, address, city, "userId", "createdAt", "updatedAt")
+            VALUES (${item.id}, ${item.name}, ${item.email}, ${item.phone}, ${item.address}, ${item.city}, ${item.userId}, ${item.createdAt}, ${item.updatedAt})
+          `
         }
       }
 
-      if (data.product) {
-        for (const item of data.product) {
-          await tx.product.create({ data: item })
+      if (data.products) {
+        for (const item of data.products) {
+          await prismaClient.$executeRaw`
+            INSERT INTO products (id, name, category, price, image, features, description, "userId", "createdAt", "updatedAt")
+            VALUES (${item.id}, ${item.name}, ${item.category}, ${item.price}, ${item.image}, ${JSON.stringify(item.features)}, ${item.description}, ${item.userId}, ${item.createdAt}, ${item.updatedAt})
+          `
         }
       }
 
       if (data.stock) {
         for (const item of data.stock) {
-          await tx.stock.create({ data: item })
+          await prismaClient.$executeRaw`
+            INSERT INTO stock (id, "productId", quantity, "minQuantity", "maxQuantity", "createdAt", "updatedAt")
+            VALUES (${item.id}, ${item.productId}, ${item.quantity}, ${item.minQuantity}, ${item.maxQuantity}, ${item.createdAt}, ${item.updatedAt})
+          `
         }
       }
 
-      if (data.shipment) {
-        for (const item of data.shipment) {
-          await tx.shipment.create({ data: item })
+      if (data.shipments) {
+        for (const item of data.shipments) {
+          await prismaClient.$executeRaw`
+            INSERT INTO shipments (id, "customerId", address, city, status, "totalAmount", "deliveryDate", "userId", "createdAt", "updatedAt")
+            VALUES (${item.id}, ${item.customerId}, ${item.address}, ${item.city}, ${item.status}, ${item.totalAmount}, ${item.deliveryDate}, ${item.userId}, ${item.createdAt}, ${item.updatedAt})
+          `
         }
       }
 
-      if (data.shipmentitem) {
-        for (const item of data.shipmentitem) {
-          await tx.shipmentItem.create({ data: item })
+      if (data.shipment_items) {
+        for (const item of data.shipment_items) {
+          await prismaClient.$executeRaw`
+            INSERT INTO shipment_items (id, "shipmentId", "productId", quantity, "unitPrice")
+            VALUES (${item.id}, ${item.shipmentId}, ${item.productId}, ${item.quantity}, ${item.unitPrice})
+          `
         }
       }
-    })
+
+      // Commit transaction
+      await prismaClient.$executeRaw`COMMIT`
+    } catch (error) {
+      // Rollback on error
+      await prismaClient.$executeRaw`ROLLBACK`
+      throw error
+    }
   }
 
   private generateChecksum(data: string): string {

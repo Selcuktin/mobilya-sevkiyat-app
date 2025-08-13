@@ -1,10 +1,24 @@
 import { getServerSession } from "next-auth/next"
 import { NextAuthOptions } from "next-auth"
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 const authOptions: NextAuthOptions = {
   providers: [
@@ -20,14 +34,21 @@ const authOptions: NextAuthOptions = {
         }
 
         try {
-          const user = await prisma.user.findUnique({
-            where: { email: credentials.email }
-          })
+          const prismaClient = await getPrismaClient()
+          
+          // Use raw SQL to avoid type issues
+          const users = await prismaClient.$queryRaw`
+            SELECT id, email, name, password 
+            FROM users 
+            WHERE email = ${credentials.email}
+            LIMIT 1
+          ` as any[]
 
-          if (!user) {
+          if (!users || users.length === 0) {
             return null
           }
 
+          const user = users[0]
           const isPasswordValid = await bcrypt.compare(credentials.password, user.password)
 
           if (!isPasswordValid) {
@@ -40,6 +61,7 @@ const authOptions: NextAuthOptions = {
             name: user.name,
           }
         } catch (error) {
+          console.error('Auth error:', error)
           return null
         }
       }
