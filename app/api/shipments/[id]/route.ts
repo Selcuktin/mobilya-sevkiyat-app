@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -21,8 +35,10 @@ export async function GET(
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Get shipment with customer and items using raw SQL
-    const shipmentResult = await prisma.$queryRaw`
+    const shipmentResult = await prismaClient.$queryRaw`
       SELECT 
         s.id,
         s.address,
@@ -50,7 +66,7 @@ export async function GET(
     const shipmentData = shipmentResult[0]
 
     // Get shipment items separately
-    const itemsResult = await prisma.$queryRaw`
+    const itemsResult = await prismaClient.$queryRaw`
       SELECT 
         si.id,
         si.quantity,
@@ -115,8 +131,10 @@ export async function PUT(
     const body = await request.json()
     const { status, address, city, deliveryDate } = body
 
+    const prismaClient = await getPrismaClient()
+
     // Check if shipment exists and belongs to user
-    const existingShipment = await prisma.$queryRaw`
+    const existingShipment = await prismaClient.$queryRaw`
       SELECT id FROM shipments 
       WHERE id = ${params.id} AND "userId" = ${userId}
       LIMIT 1
@@ -130,7 +148,7 @@ export async function PUT(
     }
 
     // Update shipment using raw SQL
-    await prisma.$executeRaw`
+    await prismaClient.$executeRaw`
       UPDATE shipments 
       SET 
         status = COALESCE(${status}, status),
@@ -142,7 +160,7 @@ export async function PUT(
     `
 
     // Get updated shipment with customer data
-    const updatedShipmentResult = await prisma.$queryRaw`
+    const updatedShipmentResult = await prismaClient.$queryRaw`
       SELECT 
         s.id,
         s.status,
@@ -200,8 +218,10 @@ export async function DELETE(
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Check if shipment exists and belongs to user
-    const existingShipment = await prisma.$queryRaw`
+    const existingShipment = await prismaClient.$queryRaw`
       SELECT id FROM shipments 
       WHERE id = ${params.id} AND "userId" = ${userId}
       LIMIT 1
@@ -215,12 +235,12 @@ export async function DELETE(
     }
 
     // Delete shipment items first
-    await prisma.$executeRaw`
+    await prismaClient.$executeRaw`
       DELETE FROM shipment_items WHERE "shipmentId" = ${params.id}
     `
 
     // Delete shipment
-    await prisma.$executeRaw`
+    await prismaClient.$executeRaw`
       DELETE FROM shipments 
       WHERE id = ${params.id} AND "userId" = ${userId}
     `

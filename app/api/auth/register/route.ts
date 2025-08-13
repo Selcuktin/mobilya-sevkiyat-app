@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,12 +37,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    })
+    const prismaClient = await getPrismaClient()
 
-    if (existingUser) {
+    // Check if user already exists using raw SQL
+    const existingUsers = await prismaClient.$queryRaw`
+      SELECT id FROM users WHERE email = ${email} LIMIT 1
+    ` as any[]
+
+    if (existingUsers && existingUsers.length > 0) {
       return NextResponse.json(
         { message: 'Bu email adresi zaten kullanılıyor' },
         { status: 400 }
@@ -38,14 +54,18 @@ export async function POST(request: NextRequest) {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12)
 
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-      }
-    })
+    // Create user using raw SQL
+    const newUsers = await prismaClient.$queryRaw`
+      INSERT INTO users (id, name, email, password, "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), ${name}, ${email}, ${hashedPassword}, NOW(), NOW())
+      RETURNING id, name, email
+    ` as any[]
+
+    if (!newUsers || newUsers.length === 0) {
+      throw new Error('User creation failed')
+    }
+
+    const user = newUsers[0]
 
     // Return success (don't send password back)
     return NextResponse.json({

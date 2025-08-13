@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -18,8 +32,10 @@ export async function GET() {
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Get shipments with customer and items data using raw SQL
-    const shipments = await prisma.$queryRaw`
+    const shipments = await prismaClient.$queryRaw`
       SELECT 
         s.id,
         s.address,
@@ -93,11 +109,13 @@ export async function POST(request: Request) {
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Calculate total amount (handle empty items array)
     let totalAmount = 0
     if (items && items.length > 0) {
       for (const item of items) {
-        const productResult = await prisma.$queryRaw`
+        const productResult = await prismaClient.$queryRaw`
           SELECT price FROM products WHERE id = ${item.productId} LIMIT 1
         ` as any[]
         
@@ -112,10 +130,10 @@ export async function POST(request: Request) {
 
     try {
       // Start transaction
-      await prisma.$executeRaw`BEGIN`
+      await prismaClient.$executeRaw`BEGIN`
 
       // Create shipment
-      await prisma.$executeRaw`
+      await prismaClient.$executeRaw`
         INSERT INTO shipments (id, "customerId", address, city, status, "totalAmount", "deliveryDate", "userId", "createdAt", "updatedAt")
         VALUES (
           ${shipmentId},
@@ -134,7 +152,7 @@ export async function POST(request: Request) {
       // Create shipment items and update stock (only if items exist)
       if (items && items.length > 0) {
         for (const item of items) {
-          const productResult = await prisma.$queryRaw`
+          const productResult = await prismaClient.$queryRaw`
             SELECT price FROM products WHERE id = ${item.productId} LIMIT 1
           ` as any[]
 
@@ -145,7 +163,7 @@ export async function POST(request: Request) {
           const productPrice = Number(productResult[0].price)
 
           // Create shipment item
-          await prisma.$executeRaw`
+          await prismaClient.$executeRaw`
             INSERT INTO shipment_items (id, "shipmentId", "productId", quantity, "unitPrice")
             VALUES (
               gen_random_uuid(),
@@ -157,7 +175,7 @@ export async function POST(request: Request) {
           `
 
           // Update stock
-          await prisma.$executeRaw`
+          await prismaClient.$executeRaw`
             UPDATE stock 
             SET quantity = GREATEST(0, quantity - ${item.quantity})
             WHERE "productId" = ${item.productId}
@@ -166,10 +184,10 @@ export async function POST(request: Request) {
       }
 
       // Commit transaction
-      await prisma.$executeRaw`COMMIT`
+      await prismaClient.$executeRaw`COMMIT`
 
       // Get the created shipment with customer data
-      const createdShipmentResult = await prisma.$queryRaw`
+      const createdShipmentResult = await prismaClient.$queryRaw`
         SELECT 
           s.id,
           s.address,
@@ -222,7 +240,7 @@ export async function POST(request: Request) {
 
     } catch (transactionError) {
       // Rollback on error
-      await prisma.$executeRaw`ROLLBACK`
+      await prismaClient.$executeRaw`ROLLBACK`
       throw transactionError
     }
 

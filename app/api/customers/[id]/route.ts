@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -21,8 +35,10 @@ export async function GET(
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Use raw query to avoid type issues
-    const customer = await prisma.$queryRaw`
+    const customer = await prismaClient.$queryRaw`
       SELECT id, name, email, phone, address, city, "createdAt", "updatedAt"
       FROM customers 
       WHERE id = ${params.id} AND "userId" = ${userId}
@@ -39,7 +55,7 @@ export async function GET(
     const customerData = customer[0]
 
     // Get shipments separately
-    const shipments = await prisma.$queryRaw`
+    const shipments = await prismaClient.$queryRaw`
       SELECT id, "totalAmount", "createdAt"
       FROM shipments 
       WHERE "customerId" = ${params.id} AND "userId" = ${userId}
@@ -89,8 +105,10 @@ export async function PUT(
     const body = await request.json()
     const { name, email, phone, address, city } = body
 
+    const prismaClient = await getPrismaClient()
+
     // Check if customer exists and belongs to user
-    const existingCustomer = await prisma.$queryRaw`
+    const existingCustomer = await prismaClient.$queryRaw`
       SELECT id FROM customers 
       WHERE id = ${params.id} AND "userId" = ${userId}
       LIMIT 1
@@ -104,7 +122,7 @@ export async function PUT(
     }
 
     // Update using raw query to avoid type issues
-    await prisma.$executeRaw`
+    await prismaClient.$executeRaw`
       UPDATE customers 
       SET 
         name = COALESCE(${name}, name),
@@ -117,7 +135,7 @@ export async function PUT(
     `
 
     // Get updated customer
-    const updatedCustomer = await prisma.$queryRaw`
+    const updatedCustomer = await prismaClient.$queryRaw`
       SELECT id, name, email, phone, address, city
       FROM customers 
       WHERE id = ${params.id} AND "userId" = ${userId}
@@ -131,7 +149,7 @@ export async function PUT(
     const customerData = updatedCustomer[0]
 
     // Get shipments
-    const shipments = await prisma.$queryRaw`
+    const shipments = await prismaClient.$queryRaw`
       SELECT id, "totalAmount", "createdAt"
       FROM shipments 
       WHERE "customerId" = ${params.id} AND "userId" = ${userId}
@@ -178,8 +196,10 @@ export async function DELETE(
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Check if customer exists and belongs to user
-    const existingCustomer = await prisma.$queryRaw`
+    const existingCustomer = await prismaClient.$queryRaw`
       SELECT id FROM customers 
       WHERE id = ${params.id} AND "userId" = ${userId}
       LIMIT 1
@@ -193,7 +213,7 @@ export async function DELETE(
     }
 
     // Check if customer has shipments
-    const shipmentCount = await prisma.$queryRaw`
+    const shipmentCount = await prismaClient.$queryRaw`
       SELECT COUNT(*) as count
       FROM shipments 
       WHERE "customerId" = ${params.id} AND "userId" = ${userId}
@@ -209,7 +229,7 @@ export async function DELETE(
     }
 
     // Delete customer
-    await prisma.$executeRaw`
+    await prismaClient.$executeRaw`
       DELETE FROM customers 
       WHERE id = ${params.id} AND "userId" = ${userId}
     `

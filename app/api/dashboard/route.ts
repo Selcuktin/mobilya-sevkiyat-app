@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -18,50 +32,52 @@ export async function GET() {
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Get all statistics using raw SQL queries
     const results = await Promise.all([
       // Total customers
-      prisma.$queryRaw`
+      prismaClient.$queryRaw`
         SELECT COUNT(*) as count FROM customers WHERE "userId" = ${userId}
       `,
       
       // Total products
-      prisma.$queryRaw`
+      prismaClient.$queryRaw`
         SELECT COUNT(*) as count FROM products WHERE "userId" = ${userId}
       `,
       
       // Total shipments
-      prisma.$queryRaw`
+      prismaClient.$queryRaw`
         SELECT COUNT(*) as count FROM shipments WHERE "userId" = ${userId}
       `,
       
       // Pending shipments
-      prisma.$queryRaw`
+      prismaClient.$queryRaw`
         SELECT COUNT(*) as count FROM shipments 
         WHERE "userId" = ${userId} AND status = 'PENDING'
       `,
       
       // Completed shipments
-      prisma.$queryRaw`
+      prismaClient.$queryRaw`
         SELECT COUNT(*) as count FROM shipments 
         WHERE "userId" = ${userId} AND status = 'DELIVERED'
       `,
       
       // Low stock products
-      prisma.$queryRaw`
+      prismaClient.$queryRaw`
         SELECT COUNT(*) as count FROM stock s
         INNER JOIN products p ON s."productId" = p.id
         WHERE p."userId" = ${userId} AND s.quantity <= 5
       `,
       
       // Total revenue
-      prisma.$queryRaw`
+      prismaClient.$queryRaw`
         SELECT COALESCE(SUM("totalAmount"), 0) as total FROM shipments 
         WHERE "userId" = ${userId} AND status = 'DELIVERED'
       `,
       
       // Recent shipments for chart data
-      prisma.$queryRaw`
+      prismaClient.$queryRaw`
         SELECT "createdAt", "totalAmount", status FROM shipments 
         WHERE "userId" = ${userId}
         ORDER BY "createdAt" DESC

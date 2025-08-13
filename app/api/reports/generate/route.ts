@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -79,8 +93,10 @@ export async function POST(request: Request) {
 }
 
 async function generateSalesReport(userId: string, start: Date, end: Date) {
+  const prismaClient = await getPrismaClient()
+  
   // Get shipments with customer data using raw SQL
-  const shipments = await prisma.$queryRaw`
+  const shipments = await prismaClient.$queryRaw`
     SELECT 
       s.id,
       s."totalAmount",
@@ -123,8 +139,10 @@ async function generateSalesReport(userId: string, start: Date, end: Date) {
 }
 
 async function generateInventoryReport(userId: string) {
+  const prismaClient = await getPrismaClient()
+  
   // Get products with stock data using raw SQL
-  const products = await prisma.$queryRaw`
+  const products = await prismaClient.$queryRaw`
     SELECT 
       p.id,
       p.name,
@@ -167,8 +185,10 @@ async function generateInventoryReport(userId: string) {
 }
 
 async function generateCustomersReport(userId: string) {
+  const prismaClient = await getPrismaClient()
+  
   // Get customers with shipment data using raw SQL
-  const customers = await prisma.$queryRaw`
+  const customers = await prismaClient.$queryRaw`
     SELECT 
       c.id,
       c.name,

@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -18,8 +32,10 @@ export async function GET() {
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Get customers with shipment data using raw SQL
-    const customers = await prisma.$queryRaw`
+    const customers = await prismaClient.$queryRaw`
       SELECT 
         c.id,
         c.name,
@@ -101,8 +117,10 @@ export async function POST(request: Request) {
     let counter = 1
     let finalEmail = customerEmail
 
+    const prismaClient = await getPrismaClient()
+
     while (emailExists) {
-      const existingCustomer = await prisma.$queryRaw`
+      const existingCustomer = await prismaClient.$queryRaw`
         SELECT id FROM customers 
         WHERE email = ${finalEmail} AND "userId" = ${userId}
         LIMIT 1
@@ -126,7 +144,7 @@ export async function POST(request: Request) {
     }
 
     // Create customer using raw SQL
-    const newCustomers = await prisma.$queryRaw`
+    const newCustomers = await prismaClient.$queryRaw`
       INSERT INTO customers (id, name, email, phone, address, city, "userId", "createdAt", "updatedAt")
       VALUES (gen_random_uuid(), ${name}, ${finalEmail}, ${phone || null}, ${address || null}, ${city || null}, ${userId}, NOW(), NOW())
       RETURNING id, name, email, phone, address, city

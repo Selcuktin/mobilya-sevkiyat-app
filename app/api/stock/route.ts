@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -18,33 +32,39 @@ export async function GET() {
       )
     }
 
-    const stockData = await prisma.stock.findMany({
-      include: {
-        product: true
-      },
-      where: {
-        product: {
-          userId: userId
-        }
-      },
-      orderBy: {
-        updatedAt: 'desc'
-      }
-    })
+    const prismaClient = await getPrismaClient()
+
+    // Get stock data with product information using raw SQL
+    const stockData = await prismaClient.$queryRaw`
+      SELECT 
+        s.id,
+        s.quantity,
+        s."minQuantity",
+        s."maxQuantity",
+        s."updatedAt",
+        p.id as "productId",
+        p.name as "productName",
+        p.category,
+        p.price
+      FROM stock s
+      INNER JOIN products p ON s."productId" = p.id
+      WHERE p."userId" = ${userId}
+      ORDER BY s."updatedAt" DESC
+    ` as any[]
 
     // Transform data to match frontend expectations
-    const transformedStock = stockData.map(stock => ({
+    const transformedStock = stockData.map((stock: any) => ({
       id: stock.id,
-      productName: stock.product.name,
-      code: `PRD-${stock.product.id.toString().padStart(3, '0')}`,
-      category: stock.product.category,
-      currentStock: stock.quantity,
-      minStock: stock.minQuantity,
-      maxStock: stock.maxQuantity,
-      unitPrice: stock.product.price,
-      totalValue: stock.quantity * stock.product.price,
-      status: getStockStatus(stock.quantity, stock.minQuantity, stock.maxQuantity),
-      lastUpdated: stock.updatedAt.toISOString().split('T')[0]
+      productName: stock.productName,
+      code: `PRD-${stock.productId.toString().padStart(3, '0')}`,
+      category: stock.category,
+      currentStock: Number(stock.quantity) || 0,
+      minStock: Number(stock.minQuantity) || 0,
+      maxStock: Number(stock.maxQuantity) || 0,
+      unitPrice: Number(stock.price) || 0,
+      totalValue: (Number(stock.quantity) || 0) * (Number(stock.price) || 0),
+      status: getStockStatus(Number(stock.quantity) || 0, Number(stock.minQuantity) || 0, Number(stock.maxQuantity) || 0),
+      lastUpdated: new Date(stock.updatedAt).toISOString().split('T')[0]
     }))
 
     return NextResponse.json({
@@ -88,36 +108,70 @@ export async function PUT(request: Request) {
       )
     }
 
-    // Update stock in database (only if user owns the product)
-    const updatedStock = await prisma.stock.update({
-      where: { 
-        id: id,
-        product: {
-          userId: userId
-        }
-      },
-      data: { 
-        quantity: Number(currentStock) || 0,
-        updatedAt: new Date()
-      },
-      include: {
-        product: true
-      }
-    })
+    const prismaClient = await getPrismaClient()
+
+    // Check if stock exists and user owns the product
+    const existingStock = await prismaClient.$queryRaw`
+      SELECT s.id, p."userId"
+      FROM stock s
+      INNER JOIN products p ON s."productId" = p.id
+      WHERE s.id = ${id} AND p."userId" = ${userId}
+      LIMIT 1
+    ` as any[]
+
+    if (!existingStock || existingStock.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'Stok kaydı bulunamadı' },
+        { status: 404 }
+      )
+    }
+
+    // Update stock using raw SQL
+    await prismaClient.$executeRaw`
+      UPDATE stock 
+      SET 
+        quantity = ${Number(currentStock) || 0},
+        "updatedAt" = NOW()
+      WHERE id = ${id}
+    `
+
+    // Get updated stock with product data
+    const updatedStockResult = await prismaClient.$queryRaw`
+      SELECT 
+        s.id,
+        s.quantity,
+        s."minQuantity",
+        s."maxQuantity",
+        s."updatedAt",
+        p.id as "productId",
+        p.name as "productName",
+        p.category,
+        p.price
+      FROM stock s
+      INNER JOIN products p ON s."productId" = p.id
+      WHERE s.id = ${id}
+      LIMIT 1
+    ` as any[]
+
+    if (!updatedStockResult || updatedStockResult.length === 0) {
+      throw new Error('Stock not found after update')
+    }
+
+    const stockData = updatedStockResult[0]
 
     // Transform response
     const transformedStock = {
-      id: updatedStock.id,
-      productName: updatedStock.product.name,
-      code: `PRD-${updatedStock.product.id.toString().padStart(3, '0')}`,
-      category: updatedStock.product.category,
-      currentStock: updatedStock.quantity,
-      minStock: updatedStock.minQuantity,
-      maxStock: updatedStock.maxQuantity,
-      unitPrice: updatedStock.product.price,
-      totalValue: updatedStock.quantity * updatedStock.product.price,
-      status: getStockStatus(updatedStock.quantity, updatedStock.minQuantity, updatedStock.maxQuantity),
-      lastUpdated: updatedStock.updatedAt.toISOString().split('T')[0]
+      id: stockData.id,
+      productName: stockData.productName,
+      code: `PRD-${stockData.productId.toString().padStart(3, '0')}`,
+      category: stockData.category,
+      currentStock: Number(stockData.quantity) || 0,
+      minStock: Number(stockData.minQuantity) || 0,
+      maxStock: Number(stockData.maxQuantity) || 0,
+      unitPrice: Number(stockData.price) || 0,
+      totalValue: (Number(stockData.quantity) || 0) * (Number(stockData.price) || 0),
+      status: getStockStatus(Number(stockData.quantity) || 0, Number(stockData.minQuantity) || 0, Number(stockData.maxQuantity) || 0),
+      lastUpdated: new Date(stockData.updatedAt).toISOString().split('T')[0]
     }
     
     return NextResponse.json({

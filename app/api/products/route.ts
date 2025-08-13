@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 import { withRateLimit } from '@/lib/rateLimit'
 import { validateProduct, sanitizeString } from '@/lib/validation'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -40,15 +54,17 @@ export const GET = withRateLimit(async (request: NextRequest) => {
       whereConditions += ` AND p.category = '${category}'`
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Get total count for pagination
-    const totalCountResult = await prisma.$queryRaw`
-      SELECT COUNT(*) as count FROM products p WHERE ${prisma.$queryRawUnsafe(whereConditions)}
+    const totalCountResult = await prismaClient.$queryRaw`
+      SELECT COUNT(*) as count FROM products p WHERE ${prismaClient.$queryRawUnsafe(whereConditions)}
     ` as any[]
     
     const totalCount = Number(totalCountResult[0]?.count || 0)
 
     // Get paginated products with stock
-    const products = await prisma.$queryRaw`
+    const products = await prismaClient.$queryRaw`
       SELECT 
         p.id,
         p.name,
@@ -62,7 +78,7 @@ export const GET = withRateLimit(async (request: NextRequest) => {
         s."minQuantity" as "stockMinQuantity"
       FROM products p
       LEFT JOIN stock s ON p.id = s."productId"
-      WHERE ${prisma.$queryRawUnsafe(whereConditions)}
+      WHERE ${prismaClient.$queryRawUnsafe(whereConditions)}
       ORDER BY p."createdAt" DESC
       LIMIT ${limit} OFFSET ${offset}
     ` as any[]
@@ -144,15 +160,17 @@ export const POST = withRateLimit(async (request: NextRequest) => {
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Create product with stock using raw SQL transaction
     const productId = `prod_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     
     try {
       // Start transaction
-      await prisma.$executeRaw`BEGIN`
+      await prismaClient.$executeRaw`BEGIN`
 
       // Create product
-      await prisma.$executeRaw`
+      await prismaClient.$executeRaw`
         INSERT INTO products (id, name, category, price, description, features, "userId", "createdAt", "updatedAt")
         VALUES (
           ${productId},
@@ -168,7 +186,7 @@ export const POST = withRateLimit(async (request: NextRequest) => {
       `
 
       // Create initial stock record
-      await prisma.$executeRaw`
+      await prismaClient.$executeRaw`
         INSERT INTO stock (id, "productId", quantity, "minQuantity", "maxQuantity", "createdAt", "updatedAt")
         VALUES (
           gen_random_uuid(),
@@ -182,10 +200,10 @@ export const POST = withRateLimit(async (request: NextRequest) => {
       `
 
       // Commit transaction
-      await prisma.$executeRaw`COMMIT`
+      await prismaClient.$executeRaw`COMMIT`
 
       // Get created product with stock
-      const createdProductResult = await prisma.$queryRaw`
+      const createdProductResult = await prismaClient.$queryRaw`
         SELECT 
           p.id,
           p.name,
@@ -226,7 +244,7 @@ export const POST = withRateLimit(async (request: NextRequest) => {
 
     } catch (transactionError) {
       // Rollback on error
-      await prisma.$executeRaw`ROLLBACK`
+      await prismaClient.$executeRaw`ROLLBACK`
       throw transactionError
     }
 

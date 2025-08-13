@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { getCurrentUserId } from '@/lib/auth'
 
-const prisma = new PrismaClient()
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -21,8 +35,10 @@ export async function GET(
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Get product with stock using raw SQL
-    const productResult = await prisma.$queryRaw`
+    const productResult = await prismaClient.$queryRaw`
       SELECT 
         p.id,
         p.name,
@@ -100,8 +116,10 @@ export async function PUT(
     const body = await request.json()
     const { name, price, description, category } = body
 
+    const prismaClient = await getPrismaClient()
+
     // Check if product exists and belongs to user
-    const existingProduct = await prisma.$queryRaw`
+    const existingProduct = await prismaClient.$queryRaw`
       SELECT id FROM products 
       WHERE id = ${params.id} AND "userId" = ${userId}
       LIMIT 1
@@ -115,7 +133,7 @@ export async function PUT(
     }
 
     // Update product using raw SQL
-    await prisma.$executeRaw`
+    await prismaClient.$executeRaw`
       UPDATE products 
       SET 
         name = COALESCE(${name}, name),
@@ -127,7 +145,7 @@ export async function PUT(
     `
 
     // Get updated product
-    const updatedProductResult = await prisma.$queryRaw`
+    const updatedProductResult = await prismaClient.$queryRaw`
       SELECT id, name, category, price, image, features, description, "createdAt", "updatedAt"
       FROM products 
       WHERE id = ${params.id} AND "userId" = ${userId}
@@ -176,8 +194,10 @@ export async function DELETE(
       )
     }
 
+    const prismaClient = await getPrismaClient()
+
     // Check if product exists and belongs to user
-    const existingProduct = await prisma.$queryRaw`
+    const existingProduct = await prismaClient.$queryRaw`
       SELECT id FROM products 
       WHERE id = ${params.id} AND "userId" = ${userId}
       LIMIT 1
@@ -191,12 +211,12 @@ export async function DELETE(
     }
 
     // Delete related stock first (if exists)
-    await prisma.$executeRaw`
+    await prismaClient.$executeRaw`
       DELETE FROM stock WHERE "productId" = ${params.id}
     `
 
     // Delete product
-    await prisma.$executeRaw`
+    await prismaClient.$executeRaw`
       DELETE FROM products 
       WHERE id = ${params.id} AND "userId" = ${userId}
     `
