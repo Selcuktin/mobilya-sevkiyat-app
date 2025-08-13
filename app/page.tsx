@@ -495,46 +495,73 @@ export default function HomePage() {
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-white mb-4">Aylık Satış Trendi</h3>
               <div className="space-y-3">
-                {[
-                  { month: '2.8M', value: 85, label: 'Son 6 ay satış performansı' },
-                  { month: '2.5M', value: 70, label: '' },
-                  { month: '2.9M', value: 90, label: '' },
-                  { month: '3.1M', value: 95, label: '' },
-                  { month: '3.4M', value: 100, label: '' },
-                  { month: '3.58M', value: 100, label: '' }
-                ].map((item, index) => (
+                {dashboardData?.chartData && dashboardData.chartData.length > 0 ? dashboardData.chartData.map((item: any, index: number) => (
                   <div key={index} className="flex items-center space-x-3">
-                    <div className="w-16 text-sm font-medium text-slate-300">{item.month}</div>
+                    <div className="w-16 text-sm font-medium text-slate-300">
+                      {new Date(item.date).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit' })}
+                    </div>
                     <div className="flex-1 bg-slate-700/50 rounded-full h-3 overflow-hidden">
                       <div 
                         className="h-full bg-gradient-to-r from-blue-400 to-cyan-400 rounded-full transition-all duration-1000 ease-out"
-                        style={{ width: `${item.value}%` }}
+                        style={{ width: `${Math.min(100, (item.revenue / 50000) * 100)}%` }}
                       />
                     </div>
+                    <div className="text-xs text-slate-400">
+                      {item.revenue.toLocaleString('tr-TR')} ₺
+                    </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="text-center py-4 text-slate-400">
+                    <p>Henüz satış verisi yok</p>
+                    <p className="text-xs mt-1">İlk sevkiyatınızı oluşturun</p>
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-slate-400 mt-2">Son 6 ay satış performansı</p>
+              <p className="text-xs text-slate-400 mt-2">Son 7 gün satış performansı</p>
             </div>
 
             {/* Şehir Performansı */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-white mb-4">Şehir Performansı</h3>
               <div className="space-y-4">
-                {[
-                  { city: 'İstanbul', amount: '850K ₺', color: 'from-emerald-400 to-green-500' },
-                  { city: 'Ankara', amount: '620K ₺', color: 'from-blue-400 to-cyan-500' },
-                  { city: 'İzmir', amount: '480K ₺', color: 'from-purple-400 to-pink-500' },
-                  { city: 'Diğer', amount: '530K ₺', color: 'from-orange-400 to-red-500' }
-                ].map((item, index) => (
-                  <div key={index} className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-3 h-3 rounded-full bg-gradient-to-r ${item.color}`}></div>
-                      <span className="text-slate-200 font-medium">{item.city}</span>
-                    </div>
-                    <span className="text-emerald-400 font-bold">{item.amount}</span>
+                {recentShipments && recentShipments.length > 0 ? (
+                  (() => {
+                    // Group shipments by city and calculate totals
+                    const cityData: { [key: string]: number } = {}
+                    recentShipments.forEach((shipment: any) => {
+                      const city = shipment.city || 'Diğer'
+                      cityData[city] = (cityData[city] || 0) + (shipment.totalAmount || 0)
+                    })
+                    
+                    const cities = Object.entries(cityData)
+                      .sort(([,a], [,b]) => b - a)
+                      .slice(0, 4)
+                    
+                    const colors = [
+                      'from-emerald-400 to-green-500',
+                      'from-blue-400 to-cyan-500', 
+                      'from-purple-400 to-pink-500',
+                      'from-orange-400 to-red-500'
+                    ]
+                    
+                    return cities.map(([city, amount], index) => (
+                      <div key={city} className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className={`w-3 h-3 rounded-full bg-gradient-to-r ${colors[index]}`}></div>
+                          <span className="text-slate-200 font-medium">{city}</span>
+                        </div>
+                        <span className="text-slate-100 font-semibold">
+                          {amount.toLocaleString('tr-TR')} ₺
+                        </span>
+                      </div>
+                    ))
+                  })()
+                ) : (
+                  <div className="text-center py-4 text-slate-400">
+                    <p>Henüz şehir verisi yok</p>
+                    <p className="text-xs mt-1">Sevkiyat ekleyince görünecek</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
@@ -542,25 +569,31 @@ export default function HomePage() {
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-white mb-4">Kategori Dağılımı</h3>
               <div className="space-y-4">
-                {[
-                  { category: 'Yatak Odası', percentage: 35, color: 'from-purple-500 to-pink-500' },
-                  { category: 'Oturma Grubu', percentage: 28, color: 'from-blue-500 to-cyan-500' },
-                  { category: 'Yemek Odası', percentage: 22, color: 'from-emerald-500 to-green-500' },
-                  { category: 'Diğer', percentage: 15, color: 'from-orange-500 to-red-500' }
-                ].map((item, index) => (
-                  <div key={index} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-200 font-medium text-sm">{item.category}</span>
-                      <span className="text-white font-bold">{item.percentage}%</span>
+                {dashboardData?.categoryDistribution && dashboardData.categoryDistribution.length > 0 ? (
+                  dashboardData.categoryDistribution.map((item: any, index: number) => (
+                    <div key={index} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-200 font-medium text-sm">{item.category}</span>
+                        <span className="text-white font-bold">{item.percentage}%</span>
+                      </div>
+                      <div className="w-full bg-slate-700/50 rounded-full h-2 overflow-hidden">
+                        <div 
+                          className={`h-full bg-gradient-to-r ${
+                            item.category === 'Yatak Odası' ? 'from-purple-500 to-pink-500' :
+                            item.category === 'Oturma Odası' ? 'from-blue-500 to-cyan-500' :
+                            'from-emerald-500 to-green-500'
+                          } rounded-full transition-all duration-1000 ease-out`}
+                          style={{ width: `${item.percentage}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-700/50 rounded-full h-2 overflow-hidden">
-                      <div 
-                        className={`h-full bg-gradient-to-r ${item.color} rounded-full transition-all duration-1000 ease-out`}
-                        style={{ width: `${item.percentage}%` }}
-                      />
-                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-4 text-slate-400">
+                    <p>Henüz kategori verisi yok</p>
+                    <p className="text-xs mt-1">Ürün ekleyince görünecek</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>
@@ -568,19 +601,33 @@ export default function HomePage() {
           {/* Bottom Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-700">
             <div className="text-center">
-              <div className="text-2xl font-bold text-emerald-400">+18.5%</div>
+              <div className="text-2xl font-bold text-emerald-400">
+                +{dashboardData?.totalRevenue?.growth || 0}%
+              </div>
               <div className="text-sm text-slate-400">Aylık Büyüme</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-blue-400">2.1M ₺</div>
+              <div className="text-2xl font-bold text-blue-400">
+                {dashboardData?.totalShipments?.value > 0 
+                  ? `${Math.round((dashboardData?.totalRevenue?.value || 0) / (dashboardData?.totalShipments?.value || 1)).toLocaleString('tr-TR')} ₺`
+                  : '0 ₺'
+                }
+              </div>
               <div className="text-sm text-slate-400">Ortalama Sipariş</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-purple-400">94.2%</div>
-              <div className="text-sm text-slate-400">Müşteri Memnuniyeti</div>
+              <div className="text-2xl font-bold text-purple-400">
+                {dashboardData?.completedShipments?.value > 0 
+                  ? `${Math.round(((dashboardData?.completedShipments?.value || 0) / (dashboardData?.totalShipments?.value || 1)) * 100)}%`
+                  : '0%'
+                }
+              </div>
+              <div className="text-sm text-slate-400">Başarı Oranı</div>
             </div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-orange-400">156</div>
+              <div className="text-2xl font-bold text-orange-400">
+                {dashboardData?.totalCustomers?.value || 0}
+              </div>
               <div className="text-sm text-slate-400">Aktif Müşteri</div>
             </div>
           </div>

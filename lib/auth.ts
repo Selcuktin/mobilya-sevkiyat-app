@@ -20,7 +20,7 @@ async function getPrismaClient() {
   return prisma
 }
 
-const authOptions: NextAuthOptions = {
+export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: 'credentials',

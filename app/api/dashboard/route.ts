@@ -82,6 +82,19 @@ export async function GET() {
         WHERE "userId" = ${userId}
         ORDER BY "createdAt" DESC
         LIMIT 30
+      `,
+      
+      // Category distribution from products
+      prismaClient.$queryRaw`
+        SELECT 
+          p.category,
+          COUNT(*) as product_count,
+          COALESCE(SUM(s.quantity), 0) as total_stock
+        FROM products p
+        LEFT JOIN stock s ON p.id = s."productId"
+        WHERE p."userId" = ${userId}
+        GROUP BY p.category
+        ORDER BY product_count DESC
       `
     ])
 
@@ -94,7 +107,8 @@ export async function GET() {
       completedShipmentsResult,
       lowStockProductsResult,
       totalRevenueResult,
-      recentShipmentsResult
+      recentShipmentsResult,
+      categoryDistributionResult
     ] = results as any[]
 
     // Extract values from query results
@@ -108,6 +122,9 @@ export async function GET() {
 
     // Process chart data - group by date
     const chartData = processChartData(recentShipmentsResult)
+    
+    // Process category distribution
+    const categoryDistribution = processCategoryDistribution(categoryDistributionResult)
     
     // Calculate growth percentages (mock for now)
     const stats = {
@@ -139,7 +156,8 @@ export async function GET() {
         value: totalRevenue,
         growth: calculateGrowth(totalRevenue, 'revenue')
       },
-      chartData
+      chartData,
+      categoryDistribution
     }
 
     return NextResponse.json({
@@ -178,6 +196,25 @@ function processChartData(shipments: any[]) {
   }
   
   return last7Days
+}
+
+function processCategoryDistribution(categories: any[]) {
+  if (!categories || categories.length === 0) {
+    return []
+  }
+  
+  const totalProducts = categories.reduce((sum: number, cat: any) => sum + Number(cat.product_count), 0)
+  
+  if (totalProducts === 0) {
+    return []
+  }
+  
+  return categories.map((cat: any) => ({
+    category: cat.category || 'Diğer',
+    count: Number(cat.product_count),
+    stock: Number(cat.total_stock),
+    percentage: Math.round((Number(cat.product_count) / totalProducts) * 100)
+  }))
 }
 
 function calculateGrowth(currentValue: number, type: string): number {

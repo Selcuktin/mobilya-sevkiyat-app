@@ -43,57 +43,58 @@ export const GET = withRateLimit(async (request: NextRequest) => {
     
     const offset = (page - 1) * limit
 
-    // Build WHERE conditions
-    let whereConditions = `p."userId" = '${userId}'`
-    
-    if (search) {
-      whereConditions += ` AND (p.name ILIKE '%${search}%' OR p.description ILIKE '%${search}%')`
-    }
-    
-    if (category) {
-      whereConditions += ` AND p.category = '${category}'`
-    }
-
     const prismaClient = await getPrismaClient()
 
+    // Build where clause properly
+    const whereClause: any = {
+      userId: userId
+    }
+
+    if (search) {
+      whereClause.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } }
+      ]
+    }
+
+    if (category) {
+      whereClause.category = category
+    }
+
     // Get total count for pagination
-    const totalCountResult = await prismaClient.$queryRaw`
-      SELECT COUNT(*) as count FROM products p WHERE ${prismaClient.$queryRawUnsafe(whereConditions)}
-    ` as any[]
-    
-    const totalCount = Number(totalCountResult[0]?.count || 0)
+    const totalCount = await prismaClient.product.count({
+      where: whereClause
+    })
 
     // Get paginated products with stock
-    const products = await prismaClient.$queryRaw`
-      SELECT 
-        p.id,
-        p.name,
-        p.category,
-        p.price,
-        p.image,
-        p.features,
-        p.description,
-        p."createdAt",
-        s.quantity as "stockQuantity",
-        s."minQuantity" as "stockMinQuantity"
-      FROM products p
-      LEFT JOIN stock s ON p.id = s."productId"
-      WHERE ${prismaClient.$queryRawUnsafe(whereConditions)}
-      ORDER BY p."createdAt" DESC
-      LIMIT ${limit} OFFSET ${offset}
-    ` as any[]
+    const products = await prismaClient.product.findMany({
+      where: whereClause,
+      include: {
+        stock: true
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      skip: offset,
+      take: limit
+    })
 
     // Transform data to match frontend expectations
-    const transformedProducts = products.map((product: any) => ({
-      id: product.id,
-      name: product.name,
-      category: product.category,
-      price: Number(product.price),
-      stock: Number(product.stockQuantity) || 0,
-      status: getStockStatus(Number(product.stockQuantity) || 0, Number(product.stockMinQuantity) || 0),
-      features: product.features || [],
-      description: product.description
-    }))
+    const transformedProducts = products.map((product: any) => {
+      const stockQuantity = product.stock?.quantity || 0
+      const minQuantity = product.stock?.minQuantity || 5
+      
+      return {
+        id: product.id,
+        name: product.name,
+        category: product.category,
+        price: Number(product.price),
+        stock: Number(stockQuantity),
+        status: getStockStatus(Number(stockQuantity), Number(minQuantity)),
+        features: product.features || [],
+        description: product.description
+      }
+    })
 
     // Create paginated response
     const totalPages = Math.ceil(totalCount / limit)
