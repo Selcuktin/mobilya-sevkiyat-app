@@ -1,19 +1,56 @@
 import { NextResponse } from 'next/server'
-import { getHealthStatus } from '@/lib/monitoring'
+
+// Use dynamic import for Prisma to avoid build issues
+let prisma: any = null
+
+async function getPrismaClient() {
+  if (!prisma) {
+    try {
+      const PrismaModule = await import('@prisma/client')
+      const PrismaClient = (PrismaModule as any).PrismaClient || (PrismaModule as any).default?.PrismaClient
+      prisma = new PrismaClient()
+    } catch (error) {
+      console.error('Failed to import Prisma Client:', error)
+      throw error
+    }
+  }
+  return prisma
+}
 
 export async function GET() {
   try {
-    const healthStatus = await getHealthStatus()
+    console.log('Health check started')
     
-    const statusCode = healthStatus.status === 'healthy' ? 200 : 503
+    // Test database connection
+    const prismaClient = await getPrismaClient()
+    console.log('Prisma client obtained')
     
-    return NextResponse.json(healthStatus, { status: statusCode })
+    // Test simple query
+    const result = await prismaClient.$queryRaw`SELECT 1 as test`
+    console.log('Database query successful:', result)
+    
+    // Test users table exists
+    const userCount = await prismaClient.$queryRaw`
+      SELECT COUNT(*) as count FROM users
+    ` as any[]
+    console.log('Users table query successful:', userCount)
+    
+    return NextResponse.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      usersTable: 'exists',
+      userCount: Number(userCount[0]?.count || 0)
+    })
   } catch (error) {
+    console.error('Health check failed:', error)
+    
     return NextResponse.json(
       {
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
-        error: 'Health check failed'
+        error: error instanceof Error ? error.message : 'Unknown error',
+        database: 'disconnected'
       },
       { status: 503 }
     )
