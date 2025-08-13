@@ -309,28 +309,48 @@ export default function HomePage() {
                     {(() => {
                       const pendingCount = dashboardData?.pendingShipments?.value || 0
                       const completedCount = dashboardData?.completedShipments?.value || 0
-                      const totalShipments = dashboardData?.totalShipments?.value || 1
+                      const totalShipments = dashboardData?.totalShipments?.value || 0
+                      const otherCount = Math.max(0, totalShipments - pendingCount - completedCount)
                       
-                      const statusData = [
-                        { 
+                      // Only show categories that have data
+                      const statusData = []
+                      
+                      if (pendingCount > 0) {
+                        statusData.push({ 
                           status: 'Hazırlanıyor', 
                           count: pendingCount, 
                           color: 'bg-yellow-500', 
-                          percentage: Math.round((pendingCount / totalShipments) * 100) 
-                        },
-                        { 
+                          percentage: totalShipments > 0 ? Math.round((pendingCount / totalShipments) * 100) : 0
+                        })
+                      }
+                      
+                      if (completedCount > 0) {
+                        statusData.push({ 
                           status: 'Teslim Edildi', 
                           count: completedCount, 
                           color: 'bg-green-500', 
-                          percentage: Math.round((completedCount / totalShipments) * 100) 
-                        },
-                        { 
+                          percentage: totalShipments > 0 ? Math.round((completedCount / totalShipments) * 100) : 0
+                        })
+                      }
+                      
+                      if (otherCount > 0) {
+                        statusData.push({ 
                           status: 'Diğer', 
-                          count: Math.max(0, totalShipments - pendingCount - completedCount), 
+                          count: otherCount, 
                           color: 'bg-blue-500', 
-                          percentage: Math.max(0, 100 - Math.round((pendingCount / totalShipments) * 100) - Math.round((completedCount / totalShipments) * 100))
-                        }
-                      ]
+                          percentage: totalShipments > 0 ? Math.round((otherCount / totalShipments) * 100) : 0
+                        })
+                      }
+                      
+                      // If no data, show empty state
+                      if (statusData.length === 0) {
+                        return (
+                          <div className="text-center py-4 text-orange-600 dark:text-orange-400">
+                            <p>Henüz sevkiyat verisi yok</p>
+                            <p className="text-xs mt-1">İlk sevkiyatınızı oluşturun</p>
+                          </div>
+                        )
+                      }
                       
                       return statusData.map((item, index) => (
                         <div key={index} className="space-y-2">
